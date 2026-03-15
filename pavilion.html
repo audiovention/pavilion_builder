@@ -535,13 +535,14 @@ function buildBraces() {
 
   for (let c = 0; c < gridCols; c++) {
     const x = -totalX/2 + c * spacingX;
-    [-1, 1].forEach(dir => {
+    const dirs = c === 0 ? [1] : c === gridCols - 1 ? [-1] : [-1, 1];
+    dirs.forEach(dir => {
       const brace = new THREE.Mesh(
         new THREE.BoxGeometry(size, ridgeBraceLen, size),
         woodMat
       );
-      brace.position.set(x, beamTop + supportHeight*0.55, dir * ridgeBraceLen*0.3);
-      brace.rotation.x = dir * Math.PI/4;
+      brace.position.set(x + dir * ridgeBraceLen*0.3, beamTop + supportHeight*0.55, 0);
+      brace.rotation.z = -dir * Math.PI/4;
       brace.castShadow = true;
       g.add(brace);
     });
