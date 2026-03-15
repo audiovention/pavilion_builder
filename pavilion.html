@@ -397,20 +397,20 @@ function getPostPositions() {
       const x = -totalX/2 + c * spacingX;
       const z = -totalZ/2 + r * spacingZ;
 
-      // Omit posts behind the brick wall
+      // Omit posts behind the brick wall (wall is centered on post grid line)
       const isBackRow = r === gridRows - 1;
       const isRightCol = c === gridCols - 1;
       // Back wall covers from right corner leftward
       if (isBackRow && longSideCoverage > 0) {
-        const wallRight = totalX/2 + postSize/2;
-        const wallLeft = wallRight - (totalX + postSize) * longSideCoverage;
-        if (x >= wallLeft - postSize/2 && x <= wallRight) continue;
+        const wallRight = totalX/2;
+        const wallLeft = wallRight - totalX * longSideCoverage;
+        if (x >= wallLeft - 0.001 && x <= wallRight + 0.001) continue;
       }
       // Short wall covers from back corner forward
       if (isRightCol && shortSideCoverage > 0) {
-        const wallBack = totalZ/2 + postSize/2;
-        const wallFront = wallBack - (totalZ + postSize) * shortSideCoverage;
-        if (z >= wallFront - postSize/2 && z <= wallBack) continue;
+        const wallBack = totalZ/2;
+        const wallFront = wallBack - totalZ * shortSideCoverage;
+        if (z >= wallFront - 0.001 && z <= wallBack + 0.001) continue;
       }
 
       positions.push({x, z, col: c, row: r});
@@ -670,13 +670,13 @@ function buildBrickWall() {
   const postSize = CONFIG.posts.size;
   const fndTop = CONFIG.foundation.thickness;
 
-  // Corner position (back-right): outer face of posts
-  const cornerX = totalX/2 + postSize/2;
-  const cornerZ = totalZ/2 + postSize/2;
+  // Corner position (back-right): centered on post grid line
+  const cornerX = totalX/2;
+  const cornerZ = totalZ/2;
 
-  // Wall spans
-  const longSpan = (totalX + postSize) * longSideCoverage;
-  const shortSpan = (totalZ + postSize) * shortSideCoverage;
+  // Wall spans (from post center to post center)
+  const longSpan = totalX * longSideCoverage;
+  const shortSpan = totalZ * shortSideCoverage;
 
   const stepL = brickLength + mortarGap;
   const stepH = brickHeight + mortarGap;
@@ -711,9 +711,9 @@ function buildBrickWall() {
     const y = fndTop + course * stepH + brickHeight/2;
     const isOdd = course % 2 === 1;
 
-    // === BACK WALL (runs along X at Z = cornerZ + brickWidth/2) ===
+    // === BACK WALL (runs along X, centered on post grid Z) ===
     if (longSideCoverage > 0) {
-      const wallZ = cornerZ + brickWidth/2;
+      const wallZ = cornerZ;
       const wallStartX = cornerX; // starts at right corner
       const wallEndX = cornerX - longSpan;
       const offset = isOdd ? stepL/2 : 0;
@@ -743,9 +743,9 @@ function buildBrickWall() {
       }
     }
 
-    // === SHORT WALL (runs along Z at X = cornerX + brickWidth/2) ===
+    // === SHORT WALL (runs along Z, centered on post grid X) ===
     if (shortSideCoverage > 0) {
-      const wallX = cornerX + brickWidth/2;
+      const wallX = cornerX;
       const wallStartZ = cornerZ;
       const wallEndZ = cornerZ - shortSpan;
       const offset = isOdd ? 0 : stepL/2;
@@ -783,12 +783,12 @@ function buildBrickWall() {
   if (longSideCoverage > 0) {
     const mh = numCourses * stepH;
     box(g, mortarMat, longSpan, mh, brickWidth*0.95,
-      cornerX - longSpan/2, fndTop + mh/2, cornerZ + brickWidth/2);
+      cornerX - longSpan/2, fndTop + mh/2, cornerZ);
   }
   if (shortSideCoverage > 0) {
     const mh = numCourses * stepH;
     box(g, mortarMat, brickWidth*0.95, mh, shortSpan,
-      cornerX + brickWidth/2, fndTop + mh/2, cornerZ - shortSpan/2);
+      cornerX, fndTop + mh/2, cornerZ - shortSpan/2);
   }
 
   updateStats(idx, numCourses);
