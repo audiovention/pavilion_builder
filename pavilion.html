@@ -385,6 +385,7 @@ function getPostPositions() {
   const totalZ = spacingZ * (gridRows - 1);
   for (let c = 0; c < gridCols; c++) {
     for (let r = 0; r < gridRows; r++) {
+      if (c > 0 && c < gridCols - 1 && r > 0 && r < gridRows - 1) continue;
       positions.push({
         x: -totalX/2 + c * spacingX,
         z: -totalZ/2 + r * spacingZ,
@@ -475,24 +476,52 @@ function buildBraces() {
   clearGroup('braces');
   const g = groups.braces;
   const {size} = CONFIG.braces;
+  const {gridCols, gridRows, spacingX} = CONFIG.posts;
   const postTop = CONFIG.foundation.thickness + CONFIG.posts.height;
   const positions = getPostPositions();
 
-  // Post-to-beam braces (45° diagonal, two per post in the Z direction)
+  // Post-to-beam braces — direction depends on post classification
   const braceLen = CONFIG.braces.length;
-  const halfPS = CONFIG.posts.size / 2;
   const beamH = CONFIG.beams.height;
+  const maxCol = gridCols - 1;
+  const maxRow = gridRows - 1;
 
   positions.forEach(p => {
-    // Brace from post toward +Z beam
-    const diagLen = braceLen * Math.SQRT2 * 0.5;
-    [-1, 1].forEach(dir => {
+    const isMinCol = p.col === 0, isMaxCol = p.col === maxCol;
+    const isMinRow = p.row === 0, isMaxRow = p.row === maxRow;
+    const isCorner = (isMinCol || isMaxCol) && (isMinRow || isMaxRow);
+
+    const axes = []; // each entry: {axis:'x'|'z', dir: +1|-1}
+
+    if (isCorner) {
+      // Two braces along different axes, pointing inward
+      axes.push({axis: 'x', dir: isMinCol ? 1 : -1});
+      axes.push({axis: 'z', dir: isMinRow ? 1 : -1});
+    } else {
+      // Edge post: two braces along the edge axis (± directions)
+      if (isMinRow || isMaxRow) {
+        // Front/back edge — braces along X
+        axes.push({axis: 'x', dir: 1});
+        axes.push({axis: 'x', dir: -1});
+      } else {
+        // Left/right edge — braces along Z
+        axes.push({axis: 'z', dir: 1});
+        axes.push({axis: 'z', dir: -1});
+      }
+    }
+
+    axes.forEach(({axis, dir}) => {
       const brace = new THREE.Mesh(
         new THREE.BoxGeometry(size, braceLen, size),
         woodMat
       );
-      brace.position.set(p.x, postTop - braceLen*0.35, p.z + dir * braceLen*0.35);
-      brace.rotation.x = dir * Math.PI/4;
+      if (axis === 'z') {
+        brace.position.set(p.x, postTop - braceLen*0.35, p.z + dir * braceLen*0.35);
+        brace.rotation.x = dir * Math.PI/4;
+      } else {
+        brace.position.set(p.x + dir * braceLen*0.35, postTop - braceLen*0.35, p.z);
+        brace.rotation.z = -dir * Math.PI/4;
+      }
       brace.castShadow = true;
       g.add(brace);
     });
@@ -501,7 +530,6 @@ function buildBraces() {
   // Ridge braces (from support columns to ridge beam, 45° in Z plane)
   const {supportHeight, size: ridgeSize} = CONFIG.ridge;
   const beamTop = postTop + beamH;
-  const {gridCols, spacingX} = CONFIG.posts;
   const totalX = spacingX * (gridCols - 1);
   const ridgeBraceLen = supportHeight * 0.75;
 
