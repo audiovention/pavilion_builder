@@ -55,12 +55,8 @@ canvas{display:block}
 // CONFIGURATION — edit these values or use the GUI sliders
 // ═══════════════════════════════════════════════════════════════
 const CONFIG = {
-  foundation: { length: 6.10, width: 4.88, thickness: 0.15 },
-  posts: {
-    size: 0.15, height: 2.44,
-    spacingX: 2.979, spacingZ: 4.737,
-    gridCols: 3, gridRows: 2
-  },
+  foundation: { length: 6.10, width: 4.88, thickness: 0.15, extension: 0.071 },
+  posts: { size: 0.15, gridCols: 3, gridRows: 2 },
   beams: { width: 0.15, height: 0.20, overhang: 0.61 },
   ridge: { size: 0.15, supportHeight: 1.045, overhang: 0.61 },
   rafters: { width: 0.05, height: 0.15, spacing: 0.61, overhang: 0.35 },
@@ -78,15 +74,13 @@ const CONFIG = {
 // ═══════════════════════════════════════════════════════════════
 const GUI_SCHEMA = [
   { section:'Foundation', open:false, controls:[
-    {k:'foundation.length',   l:'Length (m)',    mn:3,   mx:12,  s:0.1},
-    {k:'foundation.width',    l:'Width (m)',     mn:2,   mx:8,   s:0.1},
-    {k:'foundation.thickness',l:'Thickness (m)', mn:0.05,mx:0.3, s:0.01}
+    {k:'foundation.length',    l:'Length (m)',    mn:3,   mx:12,  s:0.1},
+    {k:'foundation.width',     l:'Width (m)',     mn:2,   mx:8,   s:0.1},
+    {k:'foundation.thickness', l:'Thickness (m)', mn:0.05,mx:0.3, s:0.01},
+    {k:'foundation.extension', l:'Extension (m)', mn:0.0, mx:0.5, s:0.01}
   ]},
   { section:'Posts', open:true, controls:[
     {k:'posts.size',     l:'Size (m)',       mn:0.08,mx:0.25,s:0.01},
-    {k:'posts.height',   l:'Height (m)',     mn:1.5, mx:4.0, s:0.05},
-    {k:'posts.spacingX', l:'Spacing X (m)',  mn:1.0, mx:5.0, s:0.05},
-    {k:'posts.spacingZ', l:'Spacing Z (m)',  mn:2.0, mx:6.0, s:0.05},
     {k:'posts.gridCols', l:'Columns',        mn:2,   mx:6,   s:1},
     {k:'posts.gridRows', l:'Rows',           mn:2,   mx:4,   s:1}
   ]},
@@ -376,21 +370,50 @@ function clearGroup(name) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// POST GRID DIMENSIONS (derived from foundation)
+// ═══════════════════════════════════════════════════════════════
+function getPostGridDimensions() {
+  const {length, width, extension} = CONFIG.foundation;
+  const {gridCols, gridRows} = CONFIG.posts;
+  const totalX = length - 2 * extension;
+  const totalZ = width - 2 * extension;
+  const spacingX = gridCols > 1 ? totalX / (gridCols - 1) : totalX;
+  const spacingZ = gridRows > 1 ? totalZ / (gridRows - 1) : totalZ;
+  return {totalX, totalZ, spacingX, spacingZ, gridCols, gridRows};
+}
+
+// ═══════════════════════════════════════════════════════════════
 // POST POSITION CALCULATOR
 // ═══════════════════════════════════════════════════════════════
 function getPostPositions() {
-  const {gridCols, gridRows, spacingX, spacingZ} = CONFIG.posts;
+  const {totalX, totalZ, spacingX, spacingZ, gridCols, gridRows} = getPostGridDimensions();
+  const {longSideCoverage, shortSideCoverage} = CONFIG.brickWall;
+  const postSize = CONFIG.posts.size;
   const positions = [];
-  const totalX = spacingX * (gridCols - 1);
-  const totalZ = spacingZ * (gridRows - 1);
+
   for (let c = 0; c < gridCols; c++) {
     for (let r = 0; r < gridRows; r++) {
       if (c > 0 && c < gridCols - 1 && r > 0 && r < gridRows - 1) continue;
-      positions.push({
-        x: -totalX/2 + c * spacingX,
-        z: -totalZ/2 + r * spacingZ,
-        col: c, row: r
-      });
+      const x = -totalX/2 + c * spacingX;
+      const z = -totalZ/2 + r * spacingZ;
+
+      // Omit posts behind the brick wall
+      const isBackRow = r === gridRows - 1;
+      const isRightCol = c === gridCols - 1;
+      // Back wall covers from right corner leftward
+      if (isBackRow && longSideCoverage > 0) {
+        const wallRight = totalX/2 + postSize/2;
+        const wallLeft = wallRight - (totalX + postSize) * longSideCoverage;
+        if (x >= wallLeft - postSize/2 && x <= wallRight) continue;
+      }
+      // Short wall covers from back corner forward
+      if (isRightCol && shortSideCoverage > 0) {
+        const wallBack = totalZ/2 + postSize/2;
+        const wallFront = wallBack - (totalZ + postSize) * shortSideCoverage;
+        if (z >= wallFront - postSize/2 && z <= wallBack) continue;
+      }
+
+      positions.push({x, z, col: c, row: r});
     }
   }
   return positions;
@@ -420,7 +443,8 @@ function buildFoundation() {
 
 function buildPosts() {
   clearGroup('posts');
-  const {size, height} = CONFIG.posts;
+  const size = CONFIG.posts.size;
+  const height = CONFIG.brickWall.wallHeight;
   const fndTop = CONFIG.foundation.thickness;
   const positions = getPostPositions();
   positions.forEach(p => {
@@ -432,10 +456,8 @@ function buildBeams() {
   clearGroup('beams');
   const g = groups.beams;
   const {width, height, overhang} = CONFIG.beams;
-  const {gridCols, gridRows, spacingX, spacingZ} = CONFIG.posts;
-  const postTop = CONFIG.foundation.thickness + CONFIG.posts.height;
-  const totalX = spacingX * (gridCols - 1);
-  const totalZ = spacingZ * (gridRows - 1);
+  const {totalX, totalZ, spacingX, spacingZ, gridCols, gridRows} = getPostGridDimensions();
+  const postTop = CONFIG.foundation.thickness + CONFIG.brickWall.wallHeight;
 
   // Long beams (run along X) — one per row
   const beamLenX = totalX + 2 * overhang;
@@ -456,9 +478,8 @@ function buildRidge() {
   clearGroup('ridge');
   const g = groups.ridge;
   const {size, supportHeight, overhang} = CONFIG.ridge;
-  const {gridCols, spacingX} = CONFIG.posts;
-  const totalX = spacingX * (gridCols - 1);
-  const beamTop = CONFIG.foundation.thickness + CONFIG.posts.height + CONFIG.beams.height;
+  const {totalX, spacingX, gridCols} = getPostGridDimensions();
+  const beamTop = CONFIG.foundation.thickness + CONFIG.brickWall.wallHeight + CONFIG.beams.height;
 
   // Ridge supports — one per column, centered on cross beams
   for (let c = 0; c < gridCols; c++) {
@@ -476,8 +497,8 @@ function buildBraces() {
   clearGroup('braces');
   const g = groups.braces;
   const {size} = CONFIG.braces;
-  const {gridCols, gridRows, spacingX} = CONFIG.posts;
-  const postTop = CONFIG.foundation.thickness + CONFIG.posts.height;
+  const {totalX, spacingX, gridCols, gridRows} = getPostGridDimensions();
+  const postTop = CONFIG.foundation.thickness + CONFIG.brickWall.wallHeight;
   const positions = getPostPositions();
 
   // Post-to-beam braces — direction depends on post classification
@@ -530,7 +551,6 @@ function buildBraces() {
   // Ridge braces (from support columns to ridge beam, 45° in Z plane)
   const {supportHeight, size: ridgeSize} = CONFIG.ridge;
   const beamTop = postTop + beamH;
-  const totalX = spacingX * (gridCols - 1);
   const ridgeBraceLen = supportHeight * 0.75;
 
   for (let c = 0; c < gridCols; c++) {
@@ -553,13 +573,12 @@ function buildRafters() {
   clearGroup('rafters');
   const g = groups.rafters;
   const {width, height, spacing, overhang} = CONFIG.rafters;
-  const {gridCols, gridRows, spacingX, spacingZ} = CONFIG.posts;
-  const totalX = spacingX * (gridCols - 1);
-  const beamTop = CONFIG.foundation.thickness + CONFIG.posts.height + CONFIG.beams.height;
+  const {totalX, totalZ, spacingX, spacingZ, gridCols, gridRows} = getPostGridDimensions();
+  const beamTop = CONFIG.foundation.thickness + CONFIG.brickWall.wallHeight + CONFIG.beams.height;
   const ridgeTop = beamTop + CONFIG.ridge.supportHeight + CONFIG.ridge.size/2;
 
   // Rafter geometry: from beam to ridge on each side
-  const halfSpanZ = spacingZ * (gridRows - 1) / 2;
+  const halfSpanZ = totalZ / 2;
   const rise = ridgeTop - beamTop;
   const run = halfSpanZ + overhang;
   const pitch = Math.atan2(rise, halfSpanZ);
@@ -595,12 +614,11 @@ function buildRoof() {
   clearGroup('roof');
   const g = groups.roof;
   const {thickness} = CONFIG.roof;
-  const {gridCols, gridRows, spacingX, spacingZ} = CONFIG.posts;
-  const totalX = spacingX * (gridCols - 1);
-  const beamTop = CONFIG.foundation.thickness + CONFIG.posts.height + CONFIG.beams.height;
+  const {totalX, totalZ} = getPostGridDimensions();
+  const beamTop = CONFIG.foundation.thickness + CONFIG.brickWall.wallHeight + CONFIG.beams.height;
   const ridgeTop = beamTop + CONFIG.ridge.supportHeight + CONFIG.ridge.size/2;
 
-  const halfSpanZ = spacingZ * (gridRows - 1) / 2;
+  const halfSpanZ = totalZ / 2;
   const rise = ridgeTop - beamTop;
   const run = halfSpanZ + CONFIG.rafters.overhang;
   const pitch = Math.atan2(rise, halfSpanZ);
@@ -648,9 +666,8 @@ function buildBrickWall() {
 
   if (longSideCoverage <= 0 && shortSideCoverage <= 0) return;
 
-  const {gridCols, gridRows, spacingX, spacingZ, size: postSize} = CONFIG.posts;
-  const totalX = spacingX * (gridCols - 1);
-  const totalZ = spacingZ * (gridRows - 1);
+  const {totalX, totalZ} = getPostGridDimensions();
+  const postSize = CONFIG.posts.size;
   const fndTop = CONFIG.foundation.thickness;
 
   // Corner position (back-right): outer face of posts

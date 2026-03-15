@@ -63,7 +63,7 @@ To rebuild only one part, call `buildXxx()` directly. `rebuildModel()` rebuilds 
 ```
 Ground (Y=0)
   └─ Foundation slab (0 to foundation.thickness)
-      └─ Posts (foundation.thickness to fndTop + posts.height)
+      └─ Posts (foundation.thickness to fndTop + brickWall.wallHeight)
           └─ Beams (postTop to postTop + beams.height)
               └─ Ridge supports (beamTop to beamTop + ridge.supportHeight)
                   └─ Ridge beam (top of supports + ridge.size/2)
@@ -72,19 +72,24 @@ Ground (Y=0)
 ```
 
 Key derived values used across builders:
-- `postTop = CONFIG.foundation.thickness + CONFIG.posts.height`
+- `postTop = CONFIG.foundation.thickness + CONFIG.brickWall.wallHeight`
 - `beamTop = postTop + CONFIG.beams.height`
 - `ridgeTop = beamTop + CONFIG.ridge.supportHeight + CONFIG.ridge.size/2`
 
 ### Post grid
 
-Posts are arranged in a rectangular grid defined by `posts.gridCols` (along X) × `posts.gridRows` (along Z). The function `getPostPositions()` returns an array of `{x, z, col, row}` objects, centered on the origin.
+The post grid is **derived from the foundation dimensions**. The helper `getPostGridDimensions()` computes spacing from `foundation.length`, `foundation.width`, and `foundation.extension`:
+- `totalX = length - 2 * extension`, `totalZ = width - 2 * extension`
+- `spacingX = totalX / (gridCols - 1)`, `spacingZ = totalZ / (gridRows - 1)`
+
+Posts are arranged in a rectangular grid defined by `posts.gridCols` (along X) × `posts.gridRows` (along Z). The function `getPostPositions()` returns an array of `{x, z, col, row}` objects, centered on the origin, with posts behind the brick wall filtered out.
 
 - `gridCols` controls how many columns along the long (X) axis. Default 3.
 - `gridRows` controls rows along the short (Z) axis. Default 2.
-- `spacingX` / `spacingZ` control the distance between adjacent posts.
+- Post height equals `brickWall.wallHeight` — they share the same parameter.
+- Posts that fall within the brick wall coverage area are automatically omitted.
 
-Beams and ridge elements iterate over gridCols/gridRows to match.
+Beams and ridge elements iterate over gridCols/gridRows (via `getPostGridDimensions()`, not `getPostPositions()`) to match — they span the full structure even where posts are omitted, since the wall supports them.
 
 ### Brick wall
 
@@ -165,7 +170,7 @@ The wall corner is currently computed from the post grid's back-right corner (`+
 - The mortar backing plane is a single flat box; individual mortar lines between bricks are not rendered (would need a texture or additional geometry).
 - No export functionality (STL, OBJ, etc.) yet.
 - No undo/redo for parameter changes.
-- Foundation slab does not automatically resize to match post grid + overhang.
+- Foundation is the driving dimension for the post grid; `foundation.extension` controls how much the slab extends beyond the outermost posts on each side.
 
 ## Dependencies
 
