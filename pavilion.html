@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>3D Pavilion Builder</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#111;overflow:hidden;font-family:'Segoe UI',system-ui,sans-serif;color:#ddd}
+canvas{display:block}
+#gui{position:fixed;top:0;right:0;width:310px;height:100vh;background:rgba(10,10,20,0.94);
+  border-left:1px solid rgba(255,255,255,0.07);overflow-y:auto;z-index:100;padding:14px;
+  scrollbar-width:thin;scrollbar-color:#333 transparent;transition:transform .3s}
+#gui.collapsed{transform:translateX(270px)}
+#gui::-webkit-scrollbar{width:5px}
+#gui::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+#toggle{position:fixed;top:8px;right:318px;width:32px;height:32px;background:rgba(10,10,20,0.9);
+  border:1px solid rgba(255,255,255,0.12);border-radius:5px;color:#aaa;cursor:pointer;z-index:101;
+  display:flex;align-items:center;justify-content:center;font-size:16px;transition:right .3s}
+#toggle.collapsed{right:42px}
+.gt{font-size:15px;font-weight:700;margin-bottom:14px;color:#fff;letter-spacing:1.5px;text-transform:uppercase}
+.gs{margin-bottom:8px;border:1px solid rgba(255,255,255,0.06);border-radius:6px;overflow:hidden}
+.gh{background:rgba(255,255,255,0.04);padding:8px 10px;cursor:pointer;display:flex;
+  justify-content:space-between;align-items:center;font-weight:600;font-size:11px;
+  text-transform:uppercase;letter-spacing:.5px;user-select:none}
+.gh:hover{background:rgba(255,255,255,0.07)}
+.gb{padding:8px 10px;display:none}
+.gs.open .gb{display:block}
+.gh .ar{transition:transform .2s;font-size:10px}
+.gs.open .gh .ar{transform:rotate(90deg)}
+.gr{display:flex;align-items:center;margin-bottom:6px;gap:6px}
+.gr label{flex:0 0 90px;font-size:11px;color:#888}
+.gr input[type=range]{flex:1;accent-color:#4a9eff;height:3px;cursor:pointer}
+.gv{width:52px;text-align:right;font-size:11px;font-family:Consolas,monospace;color:#4a9eff;
+  background:rgba(74,158,255,0.08);border:1px solid rgba(74,158,255,0.15);border-radius:3px;
+  padding:2px 5px;outline:none}
+.gv:focus{border-color:#4a9eff}
+#info{position:fixed;bottom:8px;left:10px;font-size:11px;color:rgba(255,255,255,0.35);z-index:100}
+#stats{position:fixed;top:8px;left:10px;font-size:11px;color:rgba(255,255,255,0.5);z-index:100;
+  background:rgba(0,0,0,0.5);padding:6px 10px;border-radius:4px}
+</style>
+</head>
+<body>
+<div id="stats"></div>
+<div id="info">LMB: Rotate &nbsp; RMB: Pan &nbsp; Scroll: Zoom</div>
+<button id="toggle" onclick="toggleGUI()">☰</button>
+<div id="gui">
+  <div class="gt">Pavilion Builder</div>
+  <div id="gui-sections"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════
+// CONFIGURATION — edit these values or use the GUI sliders
+// ═══════════════════════════════════════════════════════════════
+const CONFIG = {
+  foundation: { length: 6.10, width: 4.88, thickness: 0.15 },
+  posts: {
+    size: 0.15, height: 2.44,
+    spacingX: 2.979, spacingZ: 4.737,
+    gridCols: 3, gridRows: 2
+  },
+  beams: { width: 0.15, height: 0.20, overhang: 0.61 },
+  ridge: { size: 0.15, supportHeight: 1.045, overhang: 0.61 },
+  rafters: { width: 0.05, height: 0.15, spacing: 0.61, overhang: 0.35 },
+  roof: { thickness: 0.018 },
+  braces: { size: 0.15, length: 1.076 },
+  brickWall: {
+    brickLength: 0.250, brickWidth: 0.120, brickHeight: 0.065,
+    mortarGap: 0.010, wallHeight: 2.44,
+    longSideCoverage: 1.0, shortSideCoverage: 0.5
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// GUI SCHEMA — defines the control panel layout
+// ═══════════════════════════════════════════════════════════════
+const GUI_SCHEMA = [
+  { section:'Foundation', open:false, controls:[
+    {k:'foundation.length',   l:'Length (m)',    mn:3,   mx:12,  s:0.1},
+    {k:'foundation.width',    l:'Width (m)',     mn:2,   mx:8,   s:0.1},
+    {k:'foundation.thickness',l:'Thickness (m)', mn:0.05,mx:0.3, s:0.01}
+  ]},
+  { section:'Posts', open:true, controls:[
+    {k:'posts.size',     l:'Size (m)',       mn:0.08,mx:0.25,s:0.01},
+    {k:'posts.height',   l:'Height (m)',     mn:1.5, mx:4.0, s:0.05},
+    {k:'posts.spacingX', l:'Spacing X (m)',  mn:1.0, mx:5.0, s:0.05},
+    {k:'posts.spacingZ', l:'Spacing Z (m)',  mn:2.0, mx:6.0, s:0.05},
+    {k:'posts.gridCols', l:'Columns',        mn:2,   mx:6,   s:1},
+    {k:'posts.gridRows', l:'Rows',           mn:2,   mx:4,   s:1}
+  ]},
+  { section:'Beams', open:false, controls:[
+    {k:'beams.width',    l:'Width (m)',     mn:0.05,mx:0.25,s:0.01},
+    {k:'beams.height',   l:'Height (m)',    mn:0.10,mx:0.30,s:0.01},
+    {k:'beams.overhang', l:'Overhang (m)',  mn:0.0, mx:1.5, s:0.05}
+  ]},
+  { section:'Ridge', open:false, controls:[
+    {k:'ridge.size',          l:'Size (m)',       mn:0.08,mx:0.25,s:0.01},
+    {k:'ridge.supportHeight', l:'Support H (m)',  mn:0.5, mx:2.5, s:0.05},
+    {k:'ridge.overhang',      l:'Overhang (m)',   mn:0.0, mx:1.5, s:0.05}
+  ]},
+  { section:'Rafters', open:false, controls:[
+    {k:'rafters.width',    l:'Width (m)',     mn:0.03,mx:0.10,s:0.005},
+    {k:'rafters.height',   l:'Height (m)',    mn:0.05,mx:0.25,s:0.01},
+    {k:'rafters.spacing',  l:'Spacing (m)',   mn:0.30,mx:1.20,s:0.05},
+    {k:'rafters.overhang', l:'Overhang (m)',  mn:0.0, mx:0.80,s:0.05}
+  ]},
+  { section:'Brick Wall', open:false, controls:[
+    {k:'brickWall.brickLength',      l:'Brick L (m)',   mn:0.15,mx:0.35,s:0.005},
+    {k:'brickWall.brickWidth',       l:'Brick W (m)',   mn:0.06,mx:0.20,s:0.005},
+    {k:'brickWall.brickHeight',      l:'Brick H (m)',   mn:0.04,mx:0.10,s:0.005},
+    {k:'brickWall.mortarGap',        l:'Mortar (m)',    mn:0.005,mx:0.020,s:0.001},
+    {k:'brickWall.wallHeight',       l:'Wall H (m)',    mn:0.5, mx:3.5, s:0.05},
+    {k:'brickWall.longSideCoverage', l:'Long side %',   mn:0.0, mx:1.0, s:0.05},
+    {k:'brickWall.shortSideCoverage',l:'Short side %',  mn:0.0, mx:1.0, s:0.05}
+  ]}
+];
+
+// ═══════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════
+function cfgGet(path) {
+  return path.split('.').reduce((o,k)=>o[k], CONFIG);
+}
+function cfgSet(path, val) {
+  const parts = path.split('.');
+  const last = parts.pop();
+  const obj = parts.reduce((o,k)=>o[k], CONFIG);
+  obj[last] = val;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PROCEDURAL TEXTURES
+// ═══════════════════════════════════════════════════════════════
+function makeCanvas(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  return [c, c.getContext('2d')];
+}
+
+function woodTexture() {
+  const [c, ctx] = makeCanvas(512, 512);
+  ctx.fillStyle = '#8B6B2A';
+  ctx.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 60; i++) {
+    ctx.strokeStyle = `rgba(50,30,5,${0.08 + Math.random()*0.15})`;
+    ctx.lineWidth = 0.5 + Math.random() * 2.5;
+    ctx.beginPath();
+    const y = Math.random() * 512;
+    ctx.moveTo(0, y);
+    for (let x = 0; x < 512; x += 8) {
+      ctx.lineTo(x, y + Math.sin(x*0.015 + i)*2.5 + (Math.random()-.5)*1.5);
+    }
+    ctx.stroke();
+  }
+  // knots
+  for (let i = 0; i < 4; i++) {
+    const kx = 50 + Math.random()*412, ky = 50 + Math.random()*412;
+    const grad = ctx.createRadialGradient(kx, ky, 0, kx, ky, 8+Math.random()*6);
+    grad.addColorStop(0, 'rgba(40,20,0,0.5)');
+    grad.addColorStop(1, 'rgba(40,20,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(kx-20, ky-20, 40, 40);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+function concreteTexture() {
+  const [c, ctx] = makeCanvas(256, 256);
+  ctx.fillStyle = '#B8B8B0';
+  ctx.fillRect(0, 0, 256, 256);
+  const imgData = ctx.getImageData(0, 0, 256, 256);
+  for (let i = 0; i < imgData.data.length; i += 4) {
+    const n = (Math.random()-.5)*20;
+    imgData.data[i] += n; imgData.data[i+1] += n; imgData.data[i+2] += n;
+  }
+  ctx.putImageData(imgData, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+function shingleTexture() {
+  const [c, ctx] = makeCanvas(512, 512);
+  ctx.fillStyle = '#2C2C2C';
+  ctx.fillRect(0, 0, 512, 512);
+  const rowH = 28;
+  for (let row = 0; row < 20; row++) {
+    const y = row * rowH;
+    const offset = (row % 2) * 40;
+    ctx.fillStyle = `rgb(${35+Math.random()*15},${33+Math.random()*12},${30+Math.random()*12})`;
+    for (let col = -1; col < 8; col++) {
+      const x = offset + col * 80;
+      ctx.fillRect(x+1, y+1, 78, rowH-2);
+      ctx.strokeStyle = `rgba(0,0,0,0.3)`;
+      ctx.strokeRect(x+1, y+1, 78, rowH-2);
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    ctx.fillRect(0, y + rowH - 4, 512, 4);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// THREE.JS SCENE SETUP
+// ═══════════════════════════════════════════════════════════════
+let scene, camera, renderer;
+const groups = {};
+const groupNames = ['foundation','posts','beams','ridge','braces','rafters','roof','brickWall','ground'];
+let woodMat, concreteMat, roofMat, mortarMat;
+
+function initScene() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x87CEEB);
+  scene.fog = new THREE.Fog(0x87CEEB, 30, 80);
+
+  camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.05, 200);
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+  document.body.prepend(renderer.domElement);
+
+  // Lights
+  const amb = new THREE.AmbientLight(0xffffff, 0.45);
+  scene.add(amb);
+
+  const hemi = new THREE.HemisphereLight(0x87CEEB, 0x556B2F, 0.35);
+  scene.add(hemi);
+
+  const sun = new THREE.DirectionalLight(0xFFF5E0, 0.9);
+  sun.position.set(8, 12, 6);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.left = -15; sun.shadow.camera.right = 15;
+  sun.shadow.camera.top = 15; sun.shadow.camera.bottom = -15;
+  sun.shadow.camera.near = 0.1; sun.shadow.camera.far = 40;
+  sun.shadow.bias = -0.001;
+  scene.add(sun);
+
+  // Materials
+  const wTex = woodTexture();
+  woodMat = new THREE.MeshStandardMaterial({ map: wTex, roughness: 0.75, metalness: 0.0 });
+  const cTex = concreteTexture();
+  concreteMat = new THREE.MeshStandardMaterial({ map: cTex, roughness: 0.9 });
+  const sTex = shingleTexture();
+  roofMat = new THREE.MeshStandardMaterial({ map: sTex, roughness: 0.85 });
+  mortarMat = new THREE.MeshStandardMaterial({ color: 0x999990, roughness: 0.95 });
+
+  // Groups
+  groupNames.forEach(n => { groups[n] = new THREE.Group(); scene.add(groups[n]); });
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ORBIT CONTROLS
+// ═══════════════════════════════════════════════════════════════
+const orbit = { theta: Math.PI*0.25, phi: Math.PI*0.32, radius: 14, target: null };
+let dragging = false, dragBtn = -1, lastM = {x:0,y:0};
+let pinchDist = 0;
+
+function initControls() {
+  orbit.target = new THREE.Vector3(0, 1.8, 0);
+  updateCam();
+  const el = renderer.domElement;
+
+  el.addEventListener('mousedown', e => {
+    dragging = true; dragBtn = e.button;
+    lastM = {x:e.clientX, y:e.clientY};
+  });
+  el.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const dx = e.clientX - lastM.x, dy = e.clientY - lastM.y;
+    if (dragBtn === 0) {
+      orbit.theta -= dx * 0.005;
+      orbit.phi = Math.max(0.1, Math.min(Math.PI*0.48, orbit.phi - dy*0.005));
+    } else if (dragBtn === 2) {
+      const ps = 0.003 * orbit.radius;
+      const fwd = new THREE.Vector3().subVectors(orbit.target, camera.position).normalize();
+      const rt = new THREE.Vector3().crossVectors(fwd, camera.up).normalize();
+      const up = new THREE.Vector3().crossVectors(rt, fwd).normalize();
+      orbit.target.add(rt.multiplyScalar(-dx*ps));
+      orbit.target.add(up.multiplyScalar(dy*ps));
+    }
+    lastM = {x:e.clientX, y:e.clientY};
+    updateCam();
+  });
+  el.addEventListener('mouseup', ()=> dragging = false);
+  el.addEventListener('mouseleave', ()=> dragging = false);
+  el.addEventListener('wheel', e => {
+    orbit.radius *= 1 + e.deltaY*0.001;
+    orbit.radius = Math.max(2, Math.min(50, orbit.radius));
+    updateCam();
+  });
+  el.addEventListener('contextmenu', e => e.preventDefault());
+
+  // Touch
+  el.addEventListener('touchstart', e => {
+    if (e.touches.length === 1) {
+      dragging = true; dragBtn = 0;
+      lastM = {x:e.touches[0].clientX, y:e.touches[0].clientY};
+    } else if (e.touches.length === 2) {
+      pinchDist = Math.hypot(
+        e.touches[0].clientX-e.touches[1].clientX,
+        e.touches[0].clientY-e.touches[1].clientY
+      );
+    }
+  });
+  el.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (e.touches.length === 1 && dragging) {
+      const dx = e.touches[0].clientX-lastM.x, dy = e.touches[0].clientY-lastM.y;
+      orbit.theta -= dx*0.005;
+      orbit.phi = Math.max(0.1, Math.min(Math.PI*0.48, orbit.phi - dy*0.005));
+      lastM = {x:e.touches[0].clientX, y:e.touches[0].clientY};
+      updateCam();
+    } else if (e.touches.length === 2) {
+      const d = Math.hypot(
+        e.touches[0].clientX-e.touches[1].clientX,
+        e.touches[0].clientY-e.touches[1].clientY
+      );
+      orbit.radius *= pinchDist / d;
+      orbit.radius = Math.max(2, Math.min(50, orbit.radius));
+      pinchDist = d;
+      updateCam();
+    }
+  }, {passive:false});
+  el.addEventListener('touchend', ()=> dragging = false);
+}
+
+function updateCam() {
+  const {radius, theta, phi, target} = orbit;
+  camera.position.set(
+    target.x + radius*Math.sin(phi)*Math.cos(theta),
+    target.y + radius*Math.cos(phi),
+    target.z + radius*Math.sin(phi)*Math.sin(theta)
+  );
+  camera.lookAt(target);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UTILITY: create a box mesh and add to a group
+// ═══════════════════════════════════════════════════════════════
+function box(group, mat, w, h, d, x, y, z, rx, ry, rz) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  m.position.set(x, y, z);
+  if (rx) m.rotation.x = rx;
+  if (ry) m.rotation.y = ry;
+  if (rz) m.rotation.z = rz;
+  m.castShadow = true;
+  m.receiveShadow = true;
+  group.add(m);
+  return m;
+}
+
+function clearGroup(name) {
+  const g = groups[name];
+  while (g.children.length) {
+    const c = g.children[0];
+    if (c.geometry) c.geometry.dispose();
+    g.remove(c);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// POST POSITION CALCULATOR
+// ═══════════════════════════════════════════════════════════════
+function getPostPositions() {
+  const {gridCols, gridRows, spacingX, spacingZ} = CONFIG.posts;
+  const positions = [];
+  const totalX = spacingX * (gridCols - 1);
+  const totalZ = spacingZ * (gridRows - 1);
+  for (let c = 0; c < gridCols; c++) {
+    for (let r = 0; r < gridRows; r++) {
+      positions.push({
+        x: -totalX/2 + c * spacingX,
+        z: -totalZ/2 + r * spacingZ,
+        col: c, row: r
+      });
+    }
+  }
+  return positions;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BUILDERS
+// ═══════════════════════════════════════════════════════════════
+
+function buildGround() {
+  clearGroup('ground');
+  const g = groups.ground;
+  const groundGeo = new THREE.PlaneGeometry(60, 60);
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0x4A8C3F, roughness: 0.95 });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI/2;
+  ground.position.y = -0.01;
+  ground.receiveShadow = true;
+  g.add(ground);
+}
+
+function buildFoundation() {
+  clearGroup('foundation');
+  const {length, width, thickness} = CONFIG.foundation;
+  box(groups.foundation, concreteMat, length, thickness, width, 0, thickness/2, 0);
+}
+
+function buildPosts() {
+  clearGroup('posts');
+  const {size, height} = CONFIG.posts;
+  const fndTop = CONFIG.foundation.thickness;
+  const positions = getPostPositions();
+  positions.forEach(p => {
+    box(groups.posts, woodMat, size, height, size, p.x, fndTop + height/2, p.z);
+  });
+}
+
+function buildBeams() {
+  clearGroup('beams');
+  const g = groups.beams;
+  const {width, height, overhang} = CONFIG.beams;
+  const {gridCols, gridRows, spacingX, spacingZ} = CONFIG.posts;
+  const postTop = CONFIG.foundation.thickness + CONFIG.posts.height;
+  const totalX = spacingX * (gridCols - 1);
+  const totalZ = spacingZ * (gridRows - 1);
+
+  // Long beams (run along X) — one per row
+  const beamLenX = totalX + 2 * overhang;
+  for (let r = 0; r < gridRows; r++) {
+    const z = -totalZ/2 + r * spacingZ;
+    box(g, woodMat, beamLenX, height, width, 0, postTop + height/2, z);
+  }
+
+  // Cross beams (run along Z) — one per column
+  const beamLenZ = totalZ + 2 * overhang;
+  for (let c = 0; c < gridCols; c++) {
+    const x = -totalX/2 + c * spacingX;
+    box(g, woodMat, width, height, beamLenZ, x, postTop + height/2, 0);
+  }
+}
+
+function buildRidge() {
+  clearGroup('ridge');
+  const g = groups.ridge;
+  const {size, supportHeight, overhang} = CONFIG.ridge;
+  const {gridCols, spacingX} = CONFIG.posts;
+  const totalX = spacingX * (gridCols - 1);
+  const beamTop = CONFIG.foundation.thickness + CONFIG.posts.height + CONFIG.beams.height;
+
+  // Ridge supports — one per column, centered on cross beams
+  for (let c = 0; c < gridCols; c++) {
+    const x = -totalX/2 + c * spacingX;
+    box(g, woodMat, size, supportHeight, size, x, beamTop + supportHeight/2, 0);
+  }
+
+  // Ridge beam (runs along X)
+  const ridgeLen = totalX + 2 * overhang;
+  const ridgeY = beamTop + supportHeight + size/2;
+  box(g, woodMat, ridgeLen, size, size, 0, ridgeY, 0);
+}
+
+function buildBraces() {
+  clearGroup('braces');
+  const g = groups.braces;
+  const {size} = CONFIG.braces;
+  const postTop = CONFIG.foundation.thickness + CONFIG.posts.height;
+  const positions = getPostPositions();
+
+  // Post-to-beam braces (45° diagonal, two per post in the Z direction)
+  const braceLen = CONFIG.braces.length;
+  const halfPS = CONFIG.posts.size / 2;
+  const beamH = CONFIG.beams.height;
+
+  positions.forEach(p => {
+    // Brace from post toward +Z beam
+    const diagLen = braceLen * Math.SQRT2 * 0.5;
+    [-1, 1].forEach(dir => {
+      const brace = new THREE.Mesh(
+        new THREE.BoxGeometry(size, braceLen, size),
+        woodMat
+      );
+      brace.position.set(p.x, postTop - braceLen*0.35, p.z + dir * braceLen*0.35);
+      brace.rotation.x = dir * Math.PI/4;
+      brace.castShadow = true;
+      g.add(brace);
+    });
+  });
+
+  // Ridge braces (from support columns to ridge beam, 45° in Z plane)
+  const {supportHeight, size: ridgeSize} = CONFIG.ridge;
+  const beamTop = postTop + beamH;
+  const {gridCols, spacingX} = CONFIG.posts;
+  const totalX = spacingX * (gridCols - 1);
+  const ridgeBraceLen = supportHeight * 0.75;
+
+  for (let c = 0; c < gridCols; c++) {
+    const x = -totalX/2 + c * spacingX;
+    [-1, 1].forEach(dir => {
+      const brace = new THREE.Mesh(
+        new THREE.BoxGeometry(size, ridgeBraceLen, size),
+        woodMat
+      );
+      brace.position.set(x, beamTop + supportHeight*0.55, dir * ridgeBraceLen*0.3);
+      brace.rotation.x = dir * Math.PI/4;
+      brace.castShadow = true;
+      g.add(brace);
+    });
+  }
+}
+
+function buildRafters() {
+  clearGroup('rafters');
+  const g = groups.rafters;
+  const {width, height, spacing, overhang} = CONFIG.rafters;
+  const {gridCols, gridRows, spacingX, spacingZ} = CONFIG.posts;
+  const totalX = spacingX * (gridCols - 1);
+  const beamTop = CONFIG.foundation.thickness + CONFIG.posts.height + CONFIG.beams.height;
+  const ridgeTop = beamTop + CONFIG.ridge.supportHeight + CONFIG.ridge.size/2;
+
+  // Rafter geometry: from beam to ridge on each side
+  const halfSpanZ = spacingZ * (gridRows - 1) / 2;
+  const rise = ridgeTop - beamTop;
+  const run = halfSpanZ + overhang;
+  const pitch = Math.atan2(rise, halfSpanZ);
+  const slopeLen = Math.sqrt(rise*rise + run*run);
+
+  // Rafters along the ridge length
+  const ridgeLen = totalX + 2 * CONFIG.ridge.overhang;
+  const startX = -ridgeLen/2 + spacing/2;
+  const endX = ridgeLen/2;
+  const numRafters = Math.floor(ridgeLen / spacing) + 1;
+
+  for (let i = 0; i < numRafters; i++) {
+    const x = -ridgeLen/2 + spacing*0.3 + i * spacing;
+    if (x > ridgeLen/2 + 0.1) break;
+
+    // +Z side rafter
+    const r1 = new THREE.Mesh(new THREE.BoxGeometry(width, height, slopeLen), woodMat);
+    r1.position.set(x, beamTop + rise/2, halfSpanZ/2 + overhang/2);
+    r1.rotation.x = pitch;
+    r1.castShadow = true;
+    g.add(r1);
+
+    // -Z side rafter
+    const r2 = new THREE.Mesh(new THREE.BoxGeometry(width, height, slopeLen), woodMat);
+    r2.position.set(x, beamTop + rise/2, -(halfSpanZ/2 + overhang/2));
+    r2.rotation.x = -pitch;
+    r2.castShadow = true;
+    g.add(r2);
+  }
+}
+
+function buildRoof() {
+  clearGroup('roof');
+  const g = groups.roof;
+  const {thickness} = CONFIG.roof;
+  const {gridCols, gridRows, spacingX, spacingZ} = CONFIG.posts;
+  const totalX = spacingX * (gridCols - 1);
+  const beamTop = CONFIG.foundation.thickness + CONFIG.posts.height + CONFIG.beams.height;
+  const ridgeTop = beamTop + CONFIG.ridge.supportHeight + CONFIG.ridge.size/2;
+
+  const halfSpanZ = spacingZ * (gridRows - 1) / 2;
+  const rise = ridgeTop - beamTop;
+  const run = halfSpanZ + CONFIG.rafters.overhang;
+  const pitch = Math.atan2(rise, halfSpanZ);
+  const slopeLen = Math.sqrt(rise*rise + run*run);
+  const roofLenX = totalX + 2 * CONFIG.ridge.overhang + 0.05;
+
+  // Texture repeat
+  const rMat = roofMat.clone();
+  rMat.map = roofMat.map.clone();
+  rMat.map.repeat.set(roofLenX/3, slopeLen/2);
+  rMat.map.needsUpdate = true;
+
+  [1, -1].forEach(side => {
+    const panel = new THREE.Mesh(
+      new THREE.BoxGeometry(roofLenX, thickness, slopeLen),
+      rMat
+    );
+    // Position: ridge edge at (0, ridgeTop, 0), slope down toward side*Z
+    const centerY = ridgeTop - (slopeLen/2) * Math.sin(pitch);
+    const centerZ = side * (slopeLen/2) * Math.cos(pitch);
+    panel.position.set(0, centerY, centerZ);
+    panel.rotation.x = side * pitch;
+    panel.castShadow = true;
+    panel.receiveShadow = true;
+    g.add(panel);
+  });
+
+  // Ridge cap (small box along the top)
+  box(g, woodMat, roofLenX, 0.04, 0.20, 0, ridgeTop + thickness/2 + 0.02, 0);
+
+  // Fascia boards along the eaves
+  const eaveY = beamTop - CONFIG.rafters.overhang * Math.tan(pitch);
+  const eaveZ = halfSpanZ + CONFIG.rafters.overhang;
+  [1, -1].forEach(side => {
+    box(g, woodMat, roofLenX, 0.18, 0.02,
+      0, beamTop - 0.05, side * eaveZ);
+  });
+}
+
+function buildBrickWall() {
+  clearGroup('brickWall');
+  const g = groups.brickWall;
+  const {brickLength, brickWidth, brickHeight, mortarGap, wallHeight,
+         longSideCoverage, shortSideCoverage} = CONFIG.brickWall;
+
+  if (longSideCoverage <= 0 && shortSideCoverage <= 0) return;
+
+  const {gridCols, gridRows, spacingX, spacingZ, size: postSize} = CONFIG.posts;
+  const totalX = spacingX * (gridCols - 1);
+  const totalZ = spacingZ * (gridRows - 1);
+  const fndTop = CONFIG.foundation.thickness;
+
+  // Corner position (back-right): outer face of posts
+  const cornerX = totalX/2 + postSize/2;
+  const cornerZ = totalZ/2 + postSize/2;
+
+  // Wall spans
+  const longSpan = (totalX + postSize) * longSideCoverage;
+  const shortSpan = (totalZ + postSize) * shortSideCoverage;
+
+  const stepL = brickLength + mortarGap;
+  const stepH = brickHeight + mortarGap;
+  const numCourses = Math.floor(wallHeight / stepH);
+
+  // Count bricks
+  const longPerCourse = Math.ceil(longSpan / stepL) + 2;
+  const shortPerCourse = Math.ceil(shortSpan / stepL) + 2;
+  const maxBricks = numCourses * (longPerCourse + shortPerCourse + 4);
+
+  const brickGeo = new THREE.BoxGeometry(1, 1, 1); // unit, scaled per instance
+  const brickMat = new THREE.MeshStandardMaterial({
+    roughness: 0.82, metalness: 0.0, vertexColors: true
+  });
+
+  // We'll use standard MeshStandardMaterial with per-instance color via InstancedMesh
+  const brickMatI = new THREE.MeshStandardMaterial({ roughness: 0.82 });
+  const mesh = new THREE.InstancedMesh(brickGeo, brickMatI, maxBricks);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+
+  const mat4 = new THREE.Matrix4();
+  const pos = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  const scl = new THREE.Vector3();
+  const color = new THREE.Color();
+  const quatZ90 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), Math.PI/2);
+  const quatNone = new THREE.Quaternion();
+  let idx = 0;
+
+  for (let course = 0; course < numCourses; course++) {
+    const y = fndTop + course * stepH + brickHeight/2;
+    const isOdd = course % 2 === 1;
+
+    // === BACK WALL (runs along X at Z = cornerZ + brickWidth/2) ===
+    if (longSideCoverage > 0) {
+      const wallZ = cornerZ + brickWidth/2;
+      const wallStartX = cornerX; // starts at right corner
+      const wallEndX = cornerX - longSpan;
+      const offset = isOdd ? stepL/2 : 0;
+
+      // On odd courses, corner interlock: leave space for short wall brick at corner
+      const xStart = isOdd ? wallStartX - brickWidth - mortarGap : wallStartX;
+
+      let x = xStart;
+      while (x - brickLength/2 > wallEndX - stepL) {
+        let bL = brickLength;
+        let bx = x - brickLength/2;
+
+        // Clip at start (right edge)
+        if (bx + bL > xStart) { bL = xStart - bx; }
+        // Clip at end (left edge)
+        if (bx < wallEndX) { bL -= (wallEndX - bx); bx = wallEndX; }
+        if (bL < mortarGap) { x -= stepL; continue; }
+
+        pos.set(bx + bL/2, y, wallZ);
+        scl.set(bL, brickHeight, brickWidth);
+        mat4.compose(pos, quatNone, scl);
+        mesh.setMatrixAt(idx, mat4);
+        color.setHSL(0.055 + Math.random()*0.025, 0.65 + Math.random()*0.15, 0.32 + Math.random()*0.1);
+        mesh.setColorAt(idx, color);
+        idx++;
+        x -= stepL;
+      }
+    }
+
+    // === SHORT WALL (runs along Z at X = cornerX + brickWidth/2) ===
+    if (shortSideCoverage > 0) {
+      const wallX = cornerX + brickWidth/2;
+      const wallStartZ = cornerZ;
+      const wallEndZ = cornerZ - shortSpan;
+      const offset = isOdd ? 0 : stepL/2;
+
+      // On even courses, corner interlock: leave space for long wall brick
+      const zStart = !isOdd ? wallStartZ - brickWidth - mortarGap : wallStartZ;
+
+      let z = zStart;
+      while (z - brickLength/2 > wallEndZ - stepL) {
+        let bL = brickLength;
+        let bz = z - brickLength/2;
+
+        if (bz + bL > zStart) { bL = zStart - bz; }
+        if (bz < wallEndZ) { bL -= (wallEndZ - bz); bz = wallEndZ; }
+        if (bL < mortarGap) { z -= stepL; continue; }
+
+        pos.set(wallX, y, bz + bL/2);
+        scl.set(brickWidth, brickHeight, bL);
+        mat4.compose(pos, quatNone, scl);
+        mesh.setMatrixAt(idx, mat4);
+        color.setHSL(0.055 + Math.random()*0.025, 0.65 + Math.random()*0.15, 0.32 + Math.random()*0.1);
+        mesh.setColorAt(idx, color);
+        idx++;
+        z -= stepL;
+      }
+    }
+  }
+
+  mesh.count = idx;
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  g.add(mesh);
+
+  // Mortar backing planes
+  if (longSideCoverage > 0) {
+    const mh = numCourses * stepH;
+    box(g, mortarMat, longSpan, mh, brickWidth*0.95,
+      cornerX - longSpan/2, fndTop + mh/2, cornerZ + brickWidth/2);
+  }
+  if (shortSideCoverage > 0) {
+    const mh = numCourses * stepH;
+    box(g, mortarMat, brickWidth*0.95, mh, shortSpan,
+      cornerX + brickWidth/2, fndTop + mh/2, cornerZ - shortSpan/2);
+  }
+
+  updateStats(idx, numCourses);
+}
+
+function updateStats(brickCount, courses) {
+  const el = document.getElementById('stats');
+  el.innerHTML = `Bricks: ${brickCount} | Courses: ${courses} | Posts: ${getPostPositions().length}`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// REBUILD ALL
+// ═══════════════════════════════════════════════════════════════
+function rebuildModel() {
+  buildGround();
+  buildFoundation();
+  buildPosts();
+  buildBeams();
+  buildRidge();
+  buildBraces();
+  buildRafters();
+  buildRoof();
+  buildBrickWall();
+}
+
+let rebuildTimer;
+function scheduleRebuild() {
+  clearTimeout(rebuildTimer);
+  rebuildTimer = setTimeout(rebuildModel, 60);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GUI GENERATION
+// ═══════════════════════════════════════════════════════════════
+function createGUI() {
+  const container = document.getElementById('gui-sections');
+  GUI_SCHEMA.forEach((sec, si) => {
+    const div = document.createElement('div');
+    div.className = 'gs' + (sec.open ? ' open' : '');
+    let html = `<div class="gh" onclick="this.parentElement.classList.toggle('open')">
+      <span>${sec.section}</span><span class="ar">▶</span></div><div class="gb">`;
+
+    sec.controls.forEach(ctrl => {
+      const val = cfgGet(ctrl.k);
+      const dec = ctrl.s < 0.01 ? 3 : ctrl.s < 0.1 ? 2 : ctrl.s >= 1 ? 0 : 1;
+      const id = ctrl.k.replace(/\./g, '_');
+      html += `<div class="gr">
+        <label>${ctrl.l}</label>
+        <input type="range" id="r_${id}" min="${ctrl.mn}" max="${ctrl.mx}" step="${ctrl.s}" value="${val}"
+          oninput="onSlider('${ctrl.k}','${id}',this.value,${dec})">
+        <input type="text" class="gv" id="v_${id}" value="${val.toFixed(dec)}"
+          onchange="onValue('${ctrl.k}','${id}',this.value,${dec})"
+          onkeydown="if(event.key==='Enter')this.blur()">
+      </div>`;
+    });
+    html += '</div>';
+    div.innerHTML = html;
+    container.appendChild(div);
+  });
+}
+
+window.onSlider = function(key, id, val, dec) {
+  val = parseFloat(val);
+  cfgSet(key, val);
+  document.getElementById('v_'+id).value = val.toFixed(dec);
+  scheduleRebuild();
+};
+
+window.onValue = function(key, id, val, dec) {
+  val = parseFloat(val);
+  if (isNaN(val)) return;
+  cfgSet(key, val);
+  document.getElementById('r_'+id).value = val;
+  document.getElementById('v_'+id).value = val.toFixed(dec);
+  scheduleRebuild();
+};
+
+window.toggleGUI = function() {
+  document.getElementById('gui').classList.toggle('collapsed');
+  document.getElementById('toggle').classList.toggle('collapsed');
+};
+
+// ═══════════════════════════════════════════════════════════════
+// ANIMATION LOOP
+// ═══════════════════════════════════════════════════════════════
+function animate() {
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INITIALIZE
+// ═══════════════════════════════════════════════════════════════
+initScene();
+initControls();
+createGUI();
+rebuildModel();
+animate();
+</script>
+</body>
+</html>
