@@ -73,6 +73,15 @@ const CONFIG = {
     mortarGap: 0.010, wallHeight: 2.40,
     longSideCoverage: 1.0, shortSideCoverage: 0.23
   },
+  kitchen: {
+    length: 2.5,           // total run along back wall (m)
+    sections: 3,           // number of cabinet bays
+    height: 0.85,          // brick height from foundation top (m)
+    depth: 0.60,           // depth from wall interior face inward (m)
+    kickHeight: 0.10,      // front kickboard height (m)
+    counterThick: 0.04,    // wooden counter slab thickness
+    counterOverhang: 0.03  // counter overhang past bricks (front + sides)
+  },
   fence: {
     height: 1.0,
     picketWidth: 0.07,
@@ -157,6 +166,13 @@ const GUI_SCHEMA = [
     {k:'brickWall.longSideCoverage', l:'Long side %',   mn:0.0, mx:1.0, s:0.05},
     {k:'brickWall.shortSideCoverage',l:'Short side %',  mn:0.0, mx:1.0, s:0.05}
   ]},
+  { section:'Kitchen', open:false, controls:[
+    {k:'kitchen.length',     l:'Length (m)',     mn:0.5, mx:6.0, s:0.1},
+    {k:'kitchen.sections',   l:'Sections',       mn:1,   mx:8,   s:1},
+    {k:'kitchen.height',     l:'Height (m)',     mn:0.5, mx:1.2, s:0.05},
+    {k:'kitchen.depth',      l:'Depth (m)',      mn:0.3, mx:1.0, s:0.05},
+    {k:'kitchen.kickHeight', l:'Kick H (m)',     mn:0.0, mx:0.25,s:0.01}
+  ]},
   { section:'Fence', open:true, controls:[
     {k:'fence.height',         l:'Height (m)',     mn:0.5, mx:1.5, s:0.05},
     {k:'fence.picketWidth',    l:'Picket W (m)',   mn:0.03,mx:0.12,s:0.005},
@@ -192,6 +208,7 @@ const GUI_SCHEMA = [
     {k:'roof',       l:'Roof',        type:'checkbox'},
     {k:'panelling',  l:'Panelling',   type:'checkbox'},
     {k:'brickWall',  l:'Brick Wall',  type:'checkbox'},
+    {k:'kitchen',    l:'Kitchen',     type:'checkbox'},
     {k:'fence',      l:'Fence',       type:'checkbox'},
     {k:'furniture',  l:'Furniture',   type:'checkbox'}
   ]}
@@ -292,7 +309,7 @@ function shingleTexture() {
 let scene, camera, renderer;
 let sunLight;
 const groups = {};
-const groupNames = ['furniture','foundation','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','fence','ground'];
+const groupNames = ['furniture','foundation','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','kitchen','fence','ground'];
 let woodMat, concreteMat, roofMat, mortarMat, acaciaMat, cushionMat;
 
 function initScene() {
@@ -1128,6 +1145,137 @@ function updateStats(brickCount, courses) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// KITCHEN
+// ═══════════════════════════════════════════════════════════════
+function buildKitchen() {
+  clearGroup('kitchen');
+  const g = groups.kitchen;
+  const {length, sections, height, depth, kickHeight, counterThick, counterOverhang} = CONFIG.kitchen;
+  const {brickLength, brickWidth, brickHeight, mortarGap} = CONFIG.brickWall;
+
+  const stepL = brickLength + mortarGap;
+  const stepH = brickHeight + mortarGap;
+  const dividerCourses = Math.floor(height / stepH);
+
+  if (sections < 1 || length <= 0 || height < stepH) return;
+
+  const {totalX, totalZ} = getPostGridDimensions();
+  const fndTop = CONFIG.foundation.thickness;
+
+  // Position relative to back wall interior face
+  const cornerX = totalX / 2;
+  const cornerZ = totalZ / 2;
+  const wallInteriorZ = cornerZ - brickWidth / 2;
+  const kitchenStartX = cornerX - brickWidth / 2; // flush with short wall interior
+  const kitchenEndX = kitchenStartX - length;
+  const sectionWidth = length / sections;
+  const cabinetFrontZ = wallInteriorZ - depth;
+
+  // Estimate max bricks
+  const divBricksPerCourse = Math.ceil(depth / stepL) + 2;
+  const kickBricksPerCourse = Math.ceil(sectionWidth / stepL) + 2;
+  const kickCourses = Math.floor(kickHeight / stepH);
+  const maxBricks = (sections + 1) * dividerCourses * divBricksPerCourse
+                  + sections * kickCourses * kickBricksPerCourse + 100;
+
+  const brickGeo = new THREE.BoxGeometry(1, 1, 1);
+  const brickMatI = new THREE.MeshStandardMaterial({ roughness: 0.82 });
+  const mesh = new THREE.InstancedMesh(brickGeo, brickMatI, maxBricks);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+
+  const mat4 = new THREE.Matrix4();
+  const pos = new THREE.Vector3();
+  const quat = new THREE.Quaternion();
+  const scl = new THREE.Vector3();
+  const color = new THREE.Color();
+  let idx = 0;
+
+  function setColor() {
+    color.setHSL(0.055 + Math.random()*0.025, 0.65 + Math.random()*0.15, 0.32 + Math.random()*0.1);
+    mesh.setColorAt(idx, color);
+  }
+
+  // === DIVIDER WALLS (perpendicular to back wall, running along -Z) ===
+  for (let i = 0; i <= sections; i++) {
+    const divX = kitchenStartX - i * sectionWidth;
+    for (let course = 0; course < dividerCourses; course++) {
+      const y = fndTop + course * stepH + brickHeight / 2;
+      const isOdd = course % 2 === 1;
+      const offset = isOdd ? stepL / 2 : 0;
+
+      let z = wallInteriorZ - offset;
+      while (z - brickLength / 2 > cabinetFrontZ - stepL) {
+        let bL = brickLength;
+        let bz = z - brickLength / 2;
+
+        // Clip at back wall
+        if (bz + bL > wallInteriorZ) { bL = wallInteriorZ - bz; }
+        // Clip at front face
+        if (bz < cabinetFrontZ) { bL -= (cabinetFrontZ - bz); bz = cabinetFrontZ; }
+        if (bL < mortarGap) { z -= stepL; continue; }
+
+        pos.set(divX, y, bz + bL / 2);
+        scl.set(brickWidth, brickHeight, bL);
+        mat4.compose(pos, quat, scl);
+        mesh.setMatrixAt(idx, mat4);
+        setColor();
+        idx++;
+        z -= stepL;
+      }
+    }
+  }
+
+  // === KICKBOARDS (front face, one per section) ===
+  if (kickHeight >= stepH) {
+    for (let s = 0; s < sections; s++) {
+      const leftX = kitchenStartX - s * sectionWidth - brickWidth / 2;
+      const rightX = kitchenStartX - (s + 1) * sectionWidth + brickWidth / 2;
+      const spanX = leftX - rightX;
+
+      for (let course = 0; course < kickCourses; course++) {
+        const y = fndTop + course * stepH + brickHeight / 2;
+        const isOdd = course % 2 === 1;
+        const offset = isOdd ? stepL / 2 : 0;
+
+        let x = leftX - offset;
+        while (x - brickLength / 2 > rightX - stepL) {
+          let bL = brickLength;
+          let bx = x - brickLength / 2;
+
+          // Clip at left divider
+          if (bx + bL > leftX) { bL = leftX - bx; }
+          // Clip at right divider
+          if (bx < rightX) { bL -= (rightX - bx); bx = rightX; }
+          if (bL < mortarGap) { x -= stepL; continue; }
+
+          pos.set(bx + bL / 2, y, cabinetFrontZ);
+          scl.set(bL, brickHeight, brickWidth);
+          mat4.compose(pos, quat, scl);
+          mesh.setMatrixAt(idx, mat4);
+          setColor();
+          idx++;
+          x -= stepL;
+        }
+      }
+    }
+  }
+
+  mesh.count = idx;
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  g.add(mesh);
+
+  // === WOODEN COUNTER ===
+  const counterW = length + 2 * counterOverhang;
+  const counterD = depth + counterOverhang; // overhang only at front
+  const counterY = fndTop + dividerCourses * stepH + counterThick / 2;
+  const counterCX = (kitchenStartX + kitchenEndX) / 2;
+  const counterCZ = wallInteriorZ - counterD / 2;
+  box(g, acaciaMat, counterW, counterThick, counterD, counterCX, counterY, counterCZ);
+}
+
+// ═══════════════════════════════════════════════════════════════
 // FENCE
 // ═══════════════════════════════════════════════════════════════
 function buildFence() {
@@ -1466,6 +1614,7 @@ function rebuildModel() {
   buildRoof();
   buildPanelling();
   buildBrickWall();
+  buildKitchen();
   buildFence();
   buildFurniture();
   updateSunPosition();
