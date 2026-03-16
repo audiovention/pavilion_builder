@@ -459,9 +459,10 @@ function buildBeams() {
   const {totalX, totalZ, spacingX, spacingZ, gridCols, gridRows} = getPostGridDimensions();
   const postTop = CONFIG.foundation.thickness + CONFIG.brickWall.wallHeight;
 
-  // Long beams (run along X) — one per row
+  // Long beams (run along X) — only at the ends
   const beamLenX = totalX + 2 * overhang;
   for (let r = 0; r < gridRows; r++) {
+    if (r > 0 && r < gridRows - 1) continue;
     const z = -totalZ/2 + r * spacingZ;
     box(g, woodMat, beamLenX, height, width, 0, postTop + height/2, z);
   }
@@ -636,9 +637,10 @@ function buildRoof() {
       new THREE.BoxGeometry(roofLenX, thickness, slopeLen),
       rMat
     );
-    // Position: ridge edge at (0, ridgeTop, 0), slope down toward side*Z
-    const centerY = ridgeTop - (slopeLen/2) * Math.sin(pitch);
-    const centerZ = side * (slopeLen/2) * Math.cos(pitch);
+    // Position: on the outer face of the rafters
+    const d = CONFIG.rafters.height / 2 + thickness / 2;
+    const centerY = ridgeTop - (slopeLen/2) * Math.sin(pitch) + d * Math.cos(pitch);
+    const centerZ = side * ((slopeLen/2) * Math.cos(pitch) + d * Math.sin(pitch));
     panel.position.set(0, centerY, centerZ);
     panel.rotation.x = side * pitch;
     panel.castShadow = true;
@@ -647,7 +649,8 @@ function buildRoof() {
   });
 
   // Ridge cap (small box along the top)
-  box(g, woodMat, roofLenX, 0.04, 0.20, 0, ridgeTop + thickness/2 + 0.02, 0);
+  const capD = CONFIG.rafters.height / 2 + thickness + 0.02;
+  box(g, woodMat, roofLenX, 0.04, 0.20, 0, ridgeTop + capD, 0);
 
   // Fascia boards along the eaves
   const eaveY = beamTop - CONFIG.rafters.overhang * Math.tan(pitch);
