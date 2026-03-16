@@ -304,7 +304,7 @@ function initControls() {
     const dx = e.clientX - lastM.x, dy = e.clientY - lastM.y;
     if (dragBtn === 0) {
       orbit.theta -= dx * 0.005;
-      orbit.phi = Math.max(0.1, Math.min(Math.PI*0.48, orbit.phi - dy*0.005));
+      orbit.phi = Math.max(0.1, Math.min(Math.PI*0.95, orbit.phi - dy*0.005));
     } else if (dragBtn === 2) {
       const ps = 0.003 * orbit.radius;
       const fwd = new THREE.Vector3().subVectors(orbit.target, camera.position).normalize();
@@ -342,7 +342,7 @@ function initControls() {
     if (e.touches.length === 1 && dragging) {
       const dx = e.touches[0].clientX-lastM.x, dy = e.touches[0].clientY-lastM.y;
       orbit.theta -= dx*0.005;
-      orbit.phi = Math.max(0.1, Math.min(Math.PI*0.48, orbit.phi - dy*0.005));
+      orbit.phi = Math.max(0.1, Math.min(Math.PI*0.95, orbit.phi - dy*0.005));
       lastM = {x:e.touches[0].clientX, y:e.touches[0].clientY};
       updateCam();
     } else if (e.touches.length === 2) {
