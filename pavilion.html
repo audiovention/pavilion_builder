@@ -35,6 +35,9 @@ canvas{display:block}
   background:rgba(74,158,255,0.08);border:1px solid rgba(74,158,255,0.15);border-radius:3px;
   padding:2px 5px;outline:none}
 .gv:focus{border-color:#4a9eff}
+.gc{display:flex;align-items:center;margin-bottom:4px;gap:8px}
+.gc label{font-size:11px;color:#888;cursor:pointer;user-select:none}
+.gc input[type=checkbox]{accent-color:#4a9eff;cursor:pointer;width:14px;height:14px}
 #info{position:fixed;bottom:8px;left:10px;font-size:11px;color:rgba(255,255,255,0.35);z-index:100}
 #stats{position:fixed;top:8px;left:10px;font-size:11px;color:rgba(255,255,255,0.5);z-index:100;
   background:rgba(0,0,0,0.5);padding:6px 10px;border-radius:4px}
@@ -175,6 +178,20 @@ const GUI_SCHEMA = [
     {k:'sun.hour',        l:'Hour (0-24)',      mn:4,   mx:21,  s:0.25},
     {k:'sun.latitude',    l:'Latitude (°N)',    mn:20,  mx:65,  s:0.5},
     {k:'sun.orientation', l:'Orientation (°)',   mn:0,   mx:360, s:5}
+  ]},
+  { section:'Visibility', open:false, controls:[
+    {k:'ground',     l:'Ground',      type:'checkbox'},
+    {k:'foundation', l:'Foundation',  type:'checkbox'},
+    {k:'posts',      l:'Posts',       type:'checkbox'},
+    {k:'beams',      l:'Beams',       type:'checkbox'},
+    {k:'ridge',      l:'Ridge',       type:'checkbox'},
+    {k:'braces',     l:'Braces',      type:'checkbox'},
+    {k:'rafters',    l:'Rafters',     type:'checkbox'},
+    {k:'roof',       l:'Roof',        type:'checkbox'},
+    {k:'panelling',  l:'Panelling',   type:'checkbox'},
+    {k:'brickWall',  l:'Brick Wall',  type:'checkbox'},
+    {k:'fence',      l:'Fence',       type:'checkbox'},
+    {k:'furniture',  l:'Furniture',   type:'checkbox'}
   ]}
 ];
 
@@ -1416,17 +1433,25 @@ function createGUI() {
       <span>${sec.section}</span><span class="ar">▶</span></div><div class="gb">`;
 
     sec.controls.forEach(ctrl => {
-      const val = cfgGet(ctrl.k);
-      const dec = ctrl.s < 0.01 ? 3 : ctrl.s < 0.1 ? 2 : ctrl.s >= 1 ? 0 : 1;
-      const id = ctrl.k.replace(/\./g, '_');
-      html += `<div class="gr">
-        <label>${ctrl.l}</label>
-        <input type="range" id="r_${id}" min="${ctrl.mn}" max="${ctrl.mx}" step="${ctrl.s}" value="${val}"
-          oninput="onSlider('${ctrl.k}','${id}',this.value,${dec})">
-        <input type="text" class="gv" id="v_${id}" value="${val.toFixed(dec)}"
-          onchange="onValue('${ctrl.k}','${id}',this.value,${dec})"
-          onkeydown="if(event.key==='Enter')this.blur()">
-      </div>`;
+      if (ctrl.type === 'checkbox') {
+        html += `<div class="gc">
+          <input type="checkbox" id="c_${ctrl.k}" checked
+            onchange="onToggleGroup('${ctrl.k}',this.checked)">
+          <label for="c_${ctrl.k}">${ctrl.l}</label>
+        </div>`;
+      } else {
+        const val = cfgGet(ctrl.k);
+        const dec = ctrl.s < 0.01 ? 3 : ctrl.s < 0.1 ? 2 : ctrl.s >= 1 ? 0 : 1;
+        const id = ctrl.k.replace(/\./g, '_');
+        html += `<div class="gr">
+          <label>${ctrl.l}</label>
+          <input type="range" id="r_${id}" min="${ctrl.mn}" max="${ctrl.mx}" step="${ctrl.s}" value="${val}"
+            oninput="onSlider('${ctrl.k}','${id}',this.value,${dec})">
+          <input type="text" class="gv" id="v_${id}" value="${val.toFixed(dec)}"
+            onchange="onValue('${ctrl.k}','${id}',this.value,${dec})"
+            onkeydown="if(event.key==='Enter')this.blur()">
+        </div>`;
+      }
     });
     html += '</div>';
     div.innerHTML = html;
@@ -1448,6 +1473,10 @@ window.onValue = function(key, id, val, dec) {
   document.getElementById('r_'+id).value = val;
   document.getElementById('v_'+id).value = val.toFixed(dec);
   if (key.startsWith('sun.')) { updateSunPosition(); } else { scheduleRebuild(); }
+};
+
+window.onToggleGroup = function(groupName, visible) {
+  if (groups[groupName]) groups[groupName].visible = visible;
 };
 
 window.toggleGUI = function() {
