@@ -81,6 +81,23 @@ const CONFIG = {
     frontOpening: 1,
     leftOpening: 1
   },
+  furniture: {
+    show: 1,
+    sofaArmLength: 2.54,
+    sofaSeatDepth: 0.80,
+    sofaFrameHeight: 0.25,
+    sofaCushionThick: 0.15,
+    sofaBackHeight: 0.40,
+    sofaBackThick: 0.15,
+    sofaFrameRail: 0.06,
+    tableSize: 0.81,
+    tableHeight: 0.32,
+    tableTopThick: 0.03,
+    tableLegSize: 0.05,
+    cornerOffsetX: 0.15,
+    cornerOffsetZ: 0.15,
+    tableOffset: 0.20
+  },
   sun: {
     month: 7,           // 1-12, June default (summer)
     hour: 15,           // 0-24 (decimal), 10am default
@@ -141,6 +158,17 @@ const GUI_SCHEMA = [
     {k:'fence.picketGap',      l:'Picket gap (m)', mn:0.02,mx:0.12,s:0.005},
     {k:'fence.frontOpening',   l:'Front opening',  mn:0,   mx:4,   s:1},
     {k:'fence.leftOpening',    l:'Left opening',   mn:0,   mx:4,   s:1}
+  ]},
+  { section:'Furniture', open:false, controls:[
+    {k:'furniture.show',           l:'Show (0/1)',       mn:0,   mx:1,   s:1},
+    {k:'furniture.sofaArmLength',  l:'Arm length (m)',   mn:1.0, mx:4.0, s:0.1},
+    {k:'furniture.sofaSeatDepth',  l:'Seat depth (m)',   mn:0.5, mx:1.2, s:0.05},
+    {k:'furniture.sofaFrameHeight',l:'Frame H (m)',      mn:0.10,mx:0.40,s:0.01},
+    {k:'furniture.tableSize',      l:'Table size (m)',   mn:0.40,mx:1.50,s:0.05},
+    {k:'furniture.tableHeight',    l:'Table H (m)',      mn:0.20,mx:0.60,s:0.02},
+    {k:'furniture.cornerOffsetX',  l:'Corner ofs X (m)', mn:0.0, mx:1.0, s:0.05},
+    {k:'furniture.cornerOffsetZ',  l:'Corner ofs Z (m)', mn:0.0, mx:1.0, s:0.05},
+    {k:'furniture.tableOffset',    l:'Table gap (m)',    mn:0.0, mx:0.60,s:0.05}
   ]},
   { section:'Sun Position', open:true, controls:[
     {k:'sun.month',       l:'Month (1-12)',     mn:1,   mx:12,  s:1},
@@ -245,8 +273,8 @@ function shingleTexture() {
 let scene, camera, renderer;
 let sunLight;
 const groups = {};
-const groupNames = ['foundation','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','fence','ground'];
-let woodMat, concreteMat, roofMat, mortarMat;
+const groupNames = ['furniture','foundation','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','fence','ground'];
+let woodMat, concreteMat, roofMat, mortarMat, acaciaMat, cushionMat;
 
 function initScene() {
   scene = new THREE.Scene();
@@ -290,6 +318,9 @@ function initScene() {
   const sTex = shingleTexture();
   roofMat = new THREE.MeshStandardMaterial({ map: sTex, roughness: 0.85 });
   mortarMat = new THREE.MeshStandardMaterial({ color: 0x999990, roughness: 0.95 });
+  const aTex = woodTexture();
+  acaciaMat = new THREE.MeshStandardMaterial({ map: aTex, color: 0xC8A054, roughness: 0.70, metalness: 0.0 });
+  cushionMat = new THREE.MeshStandardMaterial({ color: 0xF0E6D0, roughness: 0.95, metalness: 0.0 });
 
   // Groups
   groupNames.forEach(n => { groups[n] = new THREE.Group(); scene.add(groups[n]); });
@@ -1100,6 +1131,115 @@ function buildFence() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// FURNITURE (L-shaped sofa + coffee table)
+// ═══════════════════════════════════════════════════════════════
+function buildFurniture() {
+  clearGroup('furniture');
+  if (CONFIG.furniture.show < 1) return;
+
+  const g = groups.furniture;
+  const {sofaArmLength, sofaSeatDepth, sofaFrameHeight, sofaCushionThick,
+         sofaBackHeight, sofaBackThick, sofaFrameRail,
+         tableSize, tableHeight, tableTopThick, tableLegSize,
+         cornerOffsetX, cornerOffsetZ, tableOffset} = CONFIG.furniture;
+  const {totalX, totalZ} = getPostGridDimensions();
+  const fndTop = CONFIG.foundation.thickness;
+
+  // Corner position: front-left (-X, -Z)
+  const cx = -totalX/2 + cornerOffsetX;
+  const cz = -totalZ/2 + cornerOffsetZ;
+  const baseY = fndTop;
+
+  // Derived heights
+  const legH = sofaFrameHeight;
+  const seatY = baseY + legH + sofaFrameRail;           // top of frame rail = bottom of cushion
+  const cushTopY = seatY + sofaCushionThick;             // top of seat cushion
+  const backBotY = cushTopY;                             // backrest sits on cushion
+  const r = sofaFrameRail;
+
+  // ── ARM A: runs along +X from corner, along the -Z edge ──
+  const aLen = sofaArmLength;
+  const aDepth = sofaSeatDepth;
+  const aCX = cx + aLen/2;
+  const aCZ = cz + aDepth/2;
+
+  // 4 legs
+  box(g, acaciaMat, r, legH, r, cx,          baseY+legH/2, cz);
+  box(g, acaciaMat, r, legH, r, cx+aLen,     baseY+legH/2, cz);
+  box(g, acaciaMat, r, legH, r, cx,          baseY+legH/2, cz+aDepth);
+  box(g, acaciaMat, r, legH, r, cx+aLen,     baseY+legH/2, cz+aDepth);
+
+  // 4 frame rails
+  const railY = baseY + legH + r/2;
+  box(g, acaciaMat, aLen, r, r, aCX, railY, cz);            // front
+  box(g, acaciaMat, aLen, r, r, aCX, railY, cz+aDepth);     // back
+  box(g, acaciaMat, r, r, aDepth, cx,      railY, aCZ);     // left end
+  box(g, acaciaMat, r, r, aDepth, cx+aLen, railY, aCZ);     // right end
+
+  // Seat cushion
+  box(g, cushionMat, aLen, sofaCushionThick, aDepth, aCX, seatY+sofaCushionThick/2, aCZ);
+
+  // Backrest along outer -Z edge
+  box(g, cushionMat, aLen, sofaBackHeight, sofaBackThick,
+      aCX, backBotY+sofaBackHeight/2, cz+sofaBackThick/2);
+
+  // ── ARM B: runs along +Z from corner, along the -X edge ──
+  // Starts after the overlap square (cz+aDepth) to avoid z-fighting
+  const bStartZ = cz + aDepth;
+  const bLen = sofaArmLength - aDepth;  // remaining length after corner
+  const bDepth = sofaSeatDepth;
+  const bCX = cx + bDepth/2;
+  const bCZ = bStartZ + bLen/2;
+
+  // 2 unique far legs (corner legs shared with Arm A)
+  box(g, acaciaMat, r, legH, r, cx,          baseY+legH/2, cz+sofaArmLength);
+  box(g, acaciaMat, r, legH, r, cx+bDepth,   baseY+legH/2, cz+sofaArmLength);
+
+  // 3 frame rails (front shared via Arm A's back rail)
+  box(g, acaciaMat, r, r, bLen, cx,        railY, bCZ);           // outer -X
+  box(g, acaciaMat, r, r, bLen, cx+bDepth, railY, bCZ);           // inner
+  box(g, acaciaMat, bDepth, r, r, bCX,     railY, cz+sofaArmLength); // far end
+
+  // Seat cushion
+  box(g, cushionMat, bDepth, sofaCushionThick, bLen, bCX, seatY+sofaCushionThick/2, bCZ);
+
+  // Backrest along outer -X edge
+  box(g, cushionMat, sofaBackThick, sofaBackHeight, bLen,
+      cx+sofaBackThick/2, backBotY+sofaBackHeight/2, bCZ);
+
+  // ── COFFEE TABLE in the L opening ──
+  const tableCX = cx + sofaSeatDepth + tableOffset + tableSize/2;
+  const tableCZ = cz + sofaSeatDepth + tableOffset + tableSize/2;
+  const tLeg = tableLegSize;
+  const tLegH = tableHeight - tableTopThick;
+  const tHalf = tableSize/2 - tLeg/2;
+
+  // 4 legs
+  box(g, acaciaMat, tLeg, tLegH, tLeg, tableCX-tHalf, baseY+tLegH/2, tableCZ-tHalf);
+  box(g, acaciaMat, tLeg, tLegH, tLeg, tableCX+tHalf, baseY+tLegH/2, tableCZ-tHalf);
+  box(g, acaciaMat, tLeg, tLegH, tLeg, tableCX-tHalf, baseY+tLegH/2, tableCZ+tHalf);
+  box(g, acaciaMat, tLeg, tLegH, tLeg, tableCX+tHalf, baseY+tLegH/2, tableCZ+tHalf);
+
+  // 4 frame rails under the top
+  const tRailY = baseY + tLegH + tLeg/2;
+  box(g, acaciaMat, tableSize, tLeg, tLeg, tableCX, tRailY, tableCZ-tHalf);
+  box(g, acaciaMat, tableSize, tLeg, tLeg, tableCX, tRailY, tableCZ+tHalf);
+  box(g, acaciaMat, tLeg, tLeg, tableSize, tableCX-tHalf, tRailY, tableCZ);
+  box(g, acaciaMat, tLeg, tLeg, tableSize, tableCX+tHalf, tRailY, tableCZ);
+
+  // Slatted top (~10 slats)
+  const slatCount = 10;
+  const slatGap = 0.008;
+  const totalGap = (slatCount - 1) * slatGap;
+  const slatW = (tableSize - totalGap) / slatCount;
+  const topY = baseY + tableHeight - tableTopThick/2;
+  for (let i = 0; i < slatCount; i++) {
+    const sx = tableCX - tableSize/2 + slatW/2 + i * (slatW + slatGap);
+    box(g, acaciaMat, slatW, tableTopThick, tableSize, sx, topY, tableCZ);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // SUN POSITION (astronomical)
 // ═══════════════════════════════════════════════════════════════
 function updateSunPosition() {
@@ -1254,6 +1394,7 @@ function rebuildModel() {
   buildPanelling();
   buildBrickWall();
   buildFence();
+  buildFurniture();
   updateSunPosition();
 }
 
