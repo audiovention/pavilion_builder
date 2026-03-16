@@ -70,10 +70,10 @@ const CONFIG = {
     longSideCoverage: 1.0, shortSideCoverage: 0.23
   },
   sun: {
-    month: 6,           // 1-12, June default (summer)
-    hour: 10,           // 0-24 (decimal), 10am default
+    month: 7,           // 1-12, June default (summer)
+    hour: 15,           // 0-24 (decimal), 10am default
     latitude: 43.4331,  // degrees N, default = Bulgaria
-    orientation: 0      // degrees, pavilion rotation — 0 = long axis (X) points East
+    orientation: 265    // degrees, pavilion rotation — 0 = long axis (X) points East
   }
 };
 
@@ -849,15 +849,16 @@ function updateSunPosition() {
                  Math.cos(latRad) * Math.cos(decRad) * Math.cos(haRad);
   const altitude = Math.asin(Math.max(-1, Math.min(1, sinAlt)));
 
-  // Solar azimuth (from south, positive westward)
+  // Solar azimuth from south: acos gives 0..π, positive = east of south
+  // Afternoon (hourAngle > 0): sun is west, so negate → negative = west
   const cosAz = (Math.sin(decRad) - Math.sin(altitude) * Math.sin(latRad)) /
                 (Math.cos(altitude) * Math.cos(latRad));
   let azimuth = Math.acos(Math.max(-1, Math.min(1, cosAz)));
-  if (hourAngle > 0) azimuth = -azimuth; // afternoon: sun is west (negative in our convention)
+  if (hourAngle > 0) azimuth = -azimuth;
 
-  // Azimuth from south: 0=south, positive=east, negative=west
-  // Convert to compass: add 180° to get from-north, then apply orientation offset
-  const compassAz = Math.PI + azimuth; // from north
+  // Convert to compass bearing from north (clockwise): subtract from π
+  // East of south (+az) → bearing < 180°, West of south (-az) → bearing > 180°
+  const compassAz = Math.PI - azimuth;
   const orientedAz = compassAz + orientation * DEG;
 
   // Convert spherical to Cartesian (Y-up)
