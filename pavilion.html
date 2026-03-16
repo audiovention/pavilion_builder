@@ -817,9 +817,10 @@ function buildBraces() {
   const ridgeBraceRise = supportHeight - size;
   const ridgeBraceLen = ridgeBraceRise * Math.SQRT2;
 
-  for (let c = 0; c < gridCols; c++) {
-    const x = colXPositions[c];
-    const dirs = c === 0 ? [1] : c === gridCols - 1 ? [-1] : [-1, 1];
+  const crossXPositions = getCrossBeamXPositions();
+  for (let i = 0; i < crossXPositions.length; i++) {
+    const x = crossXPositions[i];
+    const dirs = i === 0 ? [1] : i === crossXPositions.length - 1 ? [-1] : [-1, 1];
     dirs.forEach(dir => {
       const geo = createMiteredBraceGeometry(ridgeBraceLen, size, 'x', dir * size);
       const brace = new THREE.Mesh(geo, woodMat);
