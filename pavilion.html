@@ -67,7 +67,7 @@ const CONFIG = {
   rafters: { width: 0.05, height: 0.15, spacing: 0.61, overhang: 0.35 },
   roof: { thickness: 0.018 },
   panelling: { plankWidth: 0.10, plankThickness: 0.012, gap: 0.003, depthOffset: 0.003 },
-  braces: { size: 0.15, length: 1.076 },
+  braces: { size: 0.15, length: 1.076, trimWidth: 0.05, trimHeight: 0.15, trimLength: 1.070 },
   brickWall: {
     brickLength: 0.250, brickWidth: 0.120, brickHeight: 0.065,
     mortarGap: 0.010, wallHeight: 2.40,
@@ -451,6 +451,23 @@ function box(group, mat, w, h, d, x, y, z, rx, ry, rz) {
   return m;
 }
 
+function createMiteredBraceGeometry(length, size, shearAxis, shearAmount) {
+  const geo = new THREE.BoxGeometry(size, length, size);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i);
+    const t = y / length; // -0.5 to +0.5
+    if (shearAxis === 'x') {
+      pos.setX(i, pos.getX(i) + t * shearAmount);
+    } else {
+      pos.setZ(i, pos.getZ(i) + t * shearAmount);
+    }
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
 function clearGroup(name) {
   const g = groups[name];
   while (g.children.length) {
@@ -691,7 +708,7 @@ function buildBraces() {
   clearGroup('braces');
   const g = groups.braces;
   const {size} = CONFIG.braces;
-  const {totalX, spacingX, gridCols, gridRows} = getPostGridDimensions();
+  const {totalX, totalZ, spacingX, gridCols, gridRows} = getPostGridDimensions();
   const postTop = CONFIG.foundation.thickness + CONFIG.brickWall.wallHeight;
   const positions = getPostPositions();
 
@@ -726,10 +743,11 @@ function buildBraces() {
     }
 
     axes.forEach(({axis, dir}) => {
-      const brace = new THREE.Mesh(
-        new THREE.BoxGeometry(size, braceLen, size),
-        woodMat
+      const geo = createMiteredBraceGeometry(braceLen, size,
+        axis === 'x' ? 'x' : 'z',
+        axis === 'x' ? dir * size : dir * size
       );
+      const brace = new THREE.Mesh(geo, woodMat);
       if (axis === 'z') {
         brace.position.set(p.x, postTop - braceLen*0.35, p.z + dir * braceLen*0.35);
         brace.rotation.x = dir * Math.PI/4;
@@ -742,25 +760,50 @@ function buildBraces() {
     });
   });
 
-  // Ridge braces (from support columns to ridge beam, 45° in Z plane)
+  // Ridge braces (from support columns to ridge beam, 45° in X-Z plane)
   const {supportHeight, size: ridgeSize} = CONFIG.ridge;
   const beamTop = postTop + beamH;
-  const ridgeBraceLen = supportHeight * 0.75;
+  const ridgeBraceRise = supportHeight - size;
+  const ridgeBraceLen = ridgeBraceRise * Math.SQRT2;
 
   for (let c = 0; c < gridCols; c++) {
     const x = -totalX/2 + c * spacingX;
     const dirs = c === 0 ? [1] : c === gridCols - 1 ? [-1] : [-1, 1];
     dirs.forEach(dir => {
-      const brace = new THREE.Mesh(
-        new THREE.BoxGeometry(size, ridgeBraceLen, size),
-        woodMat
+      const geo = createMiteredBraceGeometry(ridgeBraceLen, size, 'x', dir * size);
+      const brace = new THREE.Mesh(geo, woodMat);
+      brace.position.set(
+        x + dir * (ridgeSize/2 + ridgeBraceRise/2),
+        beamTop + supportHeight - ridgeBraceRise/2,
+        0
       );
-      brace.position.set(x + dir * ridgeBraceLen*0.3, beamTop + supportHeight*0.55, 0);
       brace.rotation.z = -dir * Math.PI/4;
       brace.castShadow = true;
       g.add(brace);
     });
   }
+
+  // Gable-end V-braces (decorative trims under roof slope at each gable end)
+  const {trimWidth, trimHeight, trimLength} = CONFIG.braces;
+  const ridgeTop = beamTop + supportHeight + ridgeSize/2;
+  const ridgeBeamBottom = ridgeTop - ridgeSize;
+  const pitch = Math.atan2(ridgeTop - beamTop, totalZ / 2);
+
+  [-1, 1].forEach(xSide => {
+    const xPos = xSide * totalX / 2;
+    [-1, 1].forEach(zSide => {
+      const cy = ridgeBeamBottom - (trimLength/2) * Math.sin(pitch);
+      const cz = zSide * (trimLength/2) * Math.cos(pitch);
+      const trim = new THREE.Mesh(
+        new THREE.BoxGeometry(trimWidth, trimLength, trimHeight),
+        woodMat
+      );
+      trim.position.set(xPos, cy, cz);
+      trim.rotation.x = zSide * pitch;
+      trim.castShadow = true;
+      g.add(trim);
+    });
+  });
 }
 
 function buildRafters() {
