@@ -70,6 +70,17 @@ const CONFIG = {
     mortarGap: 0.010, wallHeight: 2.40,
     longSideCoverage: 1.0, shortSideCoverage: 0.23
   },
+  fence: {
+    height: 1.0,
+    picketWidth: 0.07,
+    picketThickness: 0.02,
+    picketGap: 0.06,
+    railHeight: 0.07,
+    railDepth: 0.035,
+    railInset: 0.10,
+    frontOpening: 1,
+    leftOpening: 1
+  },
   sun: {
     month: 7,           // 1-12, June default (summer)
     hour: 15,           // 0-24 (decimal), 10am default
@@ -123,6 +134,13 @@ const GUI_SCHEMA = [
     {k:'brickWall.wallHeight',       l:'Wall H (m)',    mn:0.5, mx:3.5, s:0.05},
     {k:'brickWall.longSideCoverage', l:'Long side %',   mn:0.0, mx:1.0, s:0.05},
     {k:'brickWall.shortSideCoverage',l:'Short side %',  mn:0.0, mx:1.0, s:0.05}
+  ]},
+  { section:'Fence', open:true, controls:[
+    {k:'fence.height',         l:'Height (m)',     mn:0.5, mx:1.5, s:0.05},
+    {k:'fence.picketWidth',    l:'Picket W (m)',   mn:0.03,mx:0.12,s:0.005},
+    {k:'fence.picketGap',      l:'Picket gap (m)', mn:0.02,mx:0.12,s:0.005},
+    {k:'fence.frontOpening',   l:'Front opening',  mn:0,   mx:4,   s:1},
+    {k:'fence.leftOpening',    l:'Left opening',   mn:0,   mx:4,   s:1}
   ]},
   { section:'Sun Position', open:true, controls:[
     {k:'sun.month',       l:'Month (1-12)',     mn:1,   mx:12,  s:1},
@@ -227,7 +245,7 @@ function shingleTexture() {
 let scene, camera, renderer;
 let sunLight;
 const groups = {};
-const groupNames = ['foundation','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','ground'];
+const groupNames = ['foundation','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','fence','ground'];
 let woodMat, concreteMat, roofMat, mortarMat;
 
 function initScene() {
@@ -442,6 +460,108 @@ function getPostPositions() {
     }
   }
   return positions;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FENCE SEGMENT CALCULATOR
+// ═══════════════════════════════════════════════════════════════
+function getFenceSegments() {
+  const {totalX, totalZ, spacingX, spacingZ, gridCols, gridRows} = getPostGridDimensions();
+  const {longSideCoverage, shortSideCoverage} = CONFIG.brickWall;
+  const posts = getPostPositions();
+  const segments = [];
+
+  // Helper: check if a post exists at given col/row
+  function hasPost(col, row) {
+    return posts.some(p => p.col === col && p.row === row);
+  }
+
+  // --- FRONT side (row 0): segments between consecutive posts along X ---
+  const frontPosts = posts.filter(p => p.row === 0).sort((a,b) => a.x - b.x);
+  for (let i = 0; i < frontPosts.length - 1; i++) {
+    segments.push({
+      side: 'front', sideIndex: i + 1,
+      x1: frontPosts[i].x, z1: frontPosts[i].z,
+      x2: frontPosts[i+1].x, z2: frontPosts[i+1].z,
+      postStart: true, postEnd: true
+    });
+  }
+
+  // --- LEFT side (col 0): segments between consecutive posts along Z ---
+  const leftPosts = posts.filter(p => p.col === 0).sort((a,b) => a.z - b.z);
+  for (let i = 0; i < leftPosts.length - 1; i++) {
+    segments.push({
+      side: 'left', sideIndex: i + 1,
+      x1: leftPosts[i].x, z1: leftPosts[i].z,
+      x2: leftPosts[i].x, z2: leftPosts[i+1].z,
+      postStart: true, postEnd: true
+    });
+  }
+  // Extension from last left post to back wall corner if back row is wall-covered
+  if (leftPosts.length > 0 && longSideCoverage > 0) {
+    const lastLeft = leftPosts[leftPosts.length - 1];
+    const backZ = totalZ / 2;
+    if (backZ - lastLeft.z > 0.01) {
+      segments.push({
+        side: 'left', sideIndex: leftPosts.length,
+        x1: lastLeft.x, z1: lastLeft.z,
+        x2: lastLeft.x, z2: backZ,
+        postStart: true, postEnd: false
+      });
+    }
+  }
+
+  // --- RIGHT side (col gridCols-1): segments between consecutive posts along Z ---
+  const rightPosts = posts.filter(p => p.col === gridCols - 1).sort((a,b) => a.z - b.z);
+  for (let i = 0; i < rightPosts.length - 1; i++) {
+    segments.push({
+      side: 'right', sideIndex: i + 1,
+      x1: rightPosts[i].x, z1: rightPosts[i].z,
+      x2: rightPosts[i].x, z2: rightPosts[i+1].z,
+      postStart: true, postEnd: true
+    });
+  }
+  // Extension from last right post to short wall front edge
+  if (rightPosts.length > 0 && shortSideCoverage > 0) {
+    const lastRight = rightPosts[rightPosts.length - 1];
+    const wallFrontZ = totalZ/2 - totalZ * shortSideCoverage;
+    if (wallFrontZ - lastRight.z > 0.01) {
+      segments.push({
+        side: 'right', sideIndex: rightPosts.length,
+        x1: lastRight.x, z1: lastRight.z,
+        x2: lastRight.x, z2: wallFrontZ,
+        postStart: true, postEnd: false
+      });
+    }
+  }
+
+  // --- BACK side (row gridRows-1): only if longSideCoverage < 1.0 ---
+  if (longSideCoverage < 1.0) {
+    const backPosts = posts.filter(p => p.row === gridRows - 1).sort((a,b) => a.x - b.x);
+    for (let i = 0; i < backPosts.length - 1; i++) {
+      segments.push({
+        side: 'back', sideIndex: i + 1,
+        x1: backPosts[i].x, z1: backPosts[i].z,
+        x2: backPosts[i+1].x, z2: backPosts[i+1].z,
+        postStart: true, postEnd: true
+      });
+    }
+    // Extension from rightmost exposed back post to wall edge
+    if (backPosts.length > 0 && longSideCoverage > 0) {
+      const rightmostBack = backPosts[backPosts.length - 1];
+      const wallLeft = totalX/2 - totalX * longSideCoverage;
+      if (wallLeft - rightmostBack.x > 0.01) {
+        segments.push({
+          side: 'back', sideIndex: backPosts.length,
+          x1: rightmostBack.x, z1: rightmostBack.z,
+          x2: wallLeft, z2: rightmostBack.z,
+          postStart: true, postEnd: false
+        });
+      }
+    }
+  }
+
+  return segments;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -904,6 +1024,82 @@ function updateStats(brickCount, courses) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// FENCE
+// ═══════════════════════════════════════════════════════════════
+function buildFence() {
+  clearGroup('fence');
+  const g = groups.fence;
+  const {height, picketWidth, picketThickness, picketGap, railHeight, railDepth, railInset,
+         frontOpening, leftOpening} = CONFIG.fence;
+  const postSize = CONFIG.posts.size;
+  const fndTop = CONFIG.foundation.thickness;
+  const segments = getFenceSegments();
+
+  segments.forEach(seg => {
+    // Skip openings
+    if (seg.side === 'front' && frontOpening > 0 && seg.sideIndex === frontOpening) return;
+    if (seg.side === 'left'  && leftOpening > 0  && seg.sideIndex === leftOpening) return;
+
+    const dx = seg.x2 - seg.x1;
+    const dz = seg.z2 - seg.z1;
+    const isAlongX = Math.abs(dx) > Math.abs(dz);
+
+    // Compute effective start/end with insets from posts
+    let startInset = seg.postStart ? postSize / 2 : 0;
+    let endInset   = seg.postEnd   ? postSize / 2 : 0;
+
+    let sx, sz, ex, ez;
+    if (isAlongX) {
+      sx = seg.x1 + (dx > 0 ? startInset : -startInset);
+      ex = seg.x2 + (dx > 0 ? -endInset : endInset);
+      sz = seg.z1; ez = seg.z2;
+    } else {
+      sz = seg.z1 + (dz > 0 ? startInset : -startInset);
+      ez = seg.z2 + (dz > 0 ? -endInset : endInset);
+      sx = seg.x1; ex = seg.x2;
+    }
+
+    const spanLen = Math.sqrt((ex - sx) ** 2 + (ez - sz) ** 2);
+    if (spanLen < 0.05) return;
+
+    const midX = (sx + ex) / 2;
+    const midZ = (sz + ez) / 2;
+
+    // Rails
+    const bottomRailY = fndTop + railInset + railHeight / 2;
+    const topRailY    = fndTop + height - railInset + railHeight / 2;
+
+    if (isAlongX) {
+      box(g, woodMat, spanLen, railHeight, railDepth, midX, bottomRailY, midZ);
+      box(g, woodMat, spanLen, railHeight, railDepth, midX, topRailY, midZ);
+    } else {
+      box(g, woodMat, railDepth, railHeight, spanLen, midX, bottomRailY, midZ);
+      box(g, woodMat, railDepth, railHeight, spanLen, midX, topRailY, midZ);
+    }
+
+    // Pickets
+    const step = picketWidth + picketGap;
+    const numPickets = Math.max(1, Math.floor(spanLen / step));
+    const actualSpan = numPickets * step - picketGap;
+    const offset = (spanLen - actualSpan) / 2;
+
+    for (let i = 0; i < numPickets; i++) {
+      const t = offset + i * step + picketWidth / 2;
+      const frac = t / spanLen;
+      const px = sx + (ex - sx) * frac;
+      const pz = sz + (ez - sz) * frac;
+      const py = fndTop + height / 2;
+
+      if (isAlongX) {
+        box(g, woodMat, picketWidth, height, picketThickness, px, py, pz);
+      } else {
+        box(g, woodMat, picketThickness, height, picketWidth, px, py, pz);
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
 // SUN POSITION (astronomical)
 // ═══════════════════════════════════════════════════════════════
 function updateSunPosition() {
@@ -1057,6 +1253,7 @@ function rebuildModel() {
   buildRoof();
   buildPanelling();
   buildBrickWall();
+  buildFence();
   updateSunPosition();
 }
 
