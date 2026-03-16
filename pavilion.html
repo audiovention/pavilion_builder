@@ -63,6 +63,7 @@ const CONFIG = {
   ridge: { size: 0.15, supportHeight: 1.045, overhang: 0.61 },
   rafters: { width: 0.05, height: 0.15, spacing: 0.61, overhang: 0.35 },
   roof: { thickness: 0.018 },
+  panelling: { plankWidth: 0.10, plankThickness: 0.012, gap: 0.003, depthOffset: 0.003 },
   braces: { size: 0.15, length: 1.076 },
   brickWall: {
     brickLength: 0.250, brickWidth: 0.120, brickHeight: 0.065,
@@ -107,6 +108,12 @@ const GUI_SCHEMA = [
     {k:'rafters.height',   l:'Height (m)',    mn:0.05,mx:0.25,s:0.01},
     {k:'rafters.spacing',  l:'Spacing (m)',   mn:0.30,mx:1.20,s:0.05},
     {k:'rafters.overhang', l:'Overhang (m)',  mn:0.0, mx:0.80,s:0.05}
+  ]},
+  { section:'Panelling', open:false, controls:[
+    {k:'panelling.plankWidth',     l:'Plank W (m)',   mn:0.06, mx:0.20, s:0.005},
+    {k:'panelling.plankThickness', l:'Thickness (m)', mn:0.008,mx:0.025,s:0.001},
+    {k:'panelling.gap',            l:'Gap (m)',       mn:0.0,  mx:0.010,s:0.001},
+    {k:'panelling.depthOffset',    l:'Depth ofs (m)', mn:0.0,  mx:0.010,s:0.001}
   ]},
   { section:'Brick Wall', open:false, controls:[
     {k:'brickWall.brickLength',      l:'Brick L (m)',   mn:0.15,mx:0.35,s:0.005},
@@ -220,7 +227,7 @@ function shingleTexture() {
 let scene, camera, renderer;
 let sunLight;
 const groups = {};
-const groupNames = ['foundation','posts','beams','ridge','braces','rafters','roof','brickWall','ground'];
+const groupNames = ['foundation','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','ground'];
 let woodMat, concreteMat, roofMat, mortarMat;
 
 function initScene() {
@@ -679,6 +686,82 @@ function buildRoof() {
   });
 }
 
+function buildPanelling() {
+  clearGroup('panelling');
+  const g = groups.panelling;
+  const {plankWidth, plankThickness, gap, depthOffset} = CONFIG.panelling;
+  const {totalX, totalZ} = getPostGridDimensions();
+  const beamTop = CONFIG.foundation.thickness + CONFIG.brickWall.wallHeight + CONFIG.beams.height;
+  const ridgeTop = beamTop + CONFIG.ridge.supportHeight + CONFIG.ridge.size / 2;
+  const halfSpanZ = totalZ / 2;
+  const rise = ridgeTop - beamTop;
+  const run = halfSpanZ + CONFIG.rafters.overhang;
+  const pitch = Math.atan2(rise, halfSpanZ);
+  const slopeLen = Math.sqrt(rise * rise + run * run);
+  const roofLenX = totalX + 2 * CONFIG.ridge.overhang + 0.05;
+  const rafterH = CONFIG.rafters.height;
+
+  // Wood material with repeat for planks
+  const pMat = woodMat.clone();
+  pMat.map = woodMat.map.clone();
+  pMat.map.repeat.set(roofLenX / 1.0, plankWidth / 0.3);
+  pMat.map.needsUpdate = true;
+
+  // --- Ceiling planks (underside of each roof slope) ---
+  const step = plankWidth + gap;
+  const nPlanks = Math.floor(slopeLen / step);
+  [1, -1].forEach(side => {
+    for (let i = 0; i < nPlanks; i++) {
+      const t = (i + 0.5) * step;  // distance along slope from ridge
+      const isOdd = i % 2;
+      // Inner face of rafters (underneath)
+      const dInner = -(rafterH / 2 + plankThickness / 2 + isOdd * depthOffset);
+      const cy = ridgeTop - t * Math.sin(pitch) + dInner * Math.cos(pitch);
+      const cz = side * (t * Math.cos(pitch) + dInner * Math.sin(pitch));
+      const plank = new THREE.Mesh(
+        new THREE.BoxGeometry(roofLenX, plankThickness, plankWidth),
+        pMat
+      );
+      plank.position.set(0, cy, cz);
+      plank.rotation.x = side * pitch;
+      plank.receiveShadow = true;
+      g.add(plank);
+    }
+  });
+
+  // --- Gable end planks (triangular closure at x = ±totalX/2) ---
+  const gMat = woodMat.clone();
+  gMat.map = woodMat.map.clone();
+  gMat.map.repeat.set(1, plankWidth / 0.3);
+  gMat.map.needsUpdate = true;
+
+  const xOffset = 0;  // flush with the cross beam face
+  [1, -1].forEach(xSide => {
+    const xPos = xSide * totalX / 2;
+    const nGable = Math.floor(rise / step);
+    for (let i = 0; i < nGable; i++) {
+      const y = beamTop + (i + 0.5) * step;
+      if (y + plankWidth / 2 > ridgeTop) break;
+      const frac = (y - beamTop) / rise;
+      const plankLen = totalZ * (1 - frac);
+      if (plankLen <= 0.01) continue;
+      const isOdd = i % 2;
+      const plank = new THREE.Mesh(
+        new THREE.BoxGeometry(plankThickness, plankWidth, plankLen),
+        gMat
+      );
+      plank.position.set(
+        xPos - xSide * (plankThickness / 2 + isOdd * depthOffset),
+        y,
+        0
+      );
+      plank.castShadow = true;
+      plank.receiveShadow = true;
+      g.add(plank);
+    }
+  });
+}
+
 function buildBrickWall() {
   clearGroup('brickWall');
   const g = groups.brickWall;
@@ -972,6 +1055,7 @@ function rebuildModel() {
   buildBraces();
   buildRafters();
   buildRoof();
+  buildPanelling();
   buildBrickWall();
   updateSunPosition();
 }
