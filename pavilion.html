@@ -62,7 +62,7 @@ canvas{display:block}
 const CONFIG = {
   foundation: { length: 7.20, width: 6.50, thickness: 0.15, extension: 0.561 },
   posts: { size: 0.12, gridCols: 4, gridRows: 3, innerColInset: 0.4, innerColOffset: 0.3 },
-  beams: { width: 0.15, height: 0.20, overhang: 0.61 },
+  beams: { width: 0.15, height: 0.20, overhang: 0.61, crossSpacing: 1.5 },
   ridge: { size: 0.15, supportHeight: 1.045, overhang: 0.61 },
   rafters: { width: 0.05, height: 0.15, spacing: 0.61, overhang: 0.35 },
   roof: { thickness: 0.018 },
@@ -138,7 +138,8 @@ const GUI_SCHEMA = [
   { section:'Beams', open:false, controls:[
     {k:'beams.width',    l:'Width (m)',     mn:0.05,mx:0.25,s:0.01},
     {k:'beams.height',   l:'Height (m)',    mn:0.10,mx:0.30,s:0.01},
-    {k:'beams.overhang', l:'Overhang (m)',  mn:0.0, mx:1.5, s:0.05}
+    {k:'beams.overhang', l:'Overhang (m)',  mn:0.0, mx:1.5, s:0.05},
+    {k:'beams.crossSpacing', l:'Cross Spacing (m)', mn:0.5, mx:3.0, s:0.05}
   ]},
   { section:'Ridge', open:false, controls:[
     {k:'ridge.size',          l:'Size (m)',       mn:0.08,mx:0.25,s:0.01},
@@ -521,6 +522,24 @@ function getPostGridDimensions() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// CROSS BEAM X POSITIONS (decoupled from post columns)
+// ═══════════════════════════════════════════════════════════════
+function getCrossBeamXPositions() {
+  const {totalX} = getPostGridDimensions();
+  const crossSpacing = CONFIG.beams.crossSpacing;
+  const positions = [-totalX/2, totalX/2];
+  const n = Math.max(0, Math.round(totalX / crossSpacing) - 1);
+  if (n > 0) {
+    const step = totalX / (n + 1);
+    for (let i = 1; i <= n; i++) {
+      positions.push(-totalX/2 + i * step);
+    }
+  }
+  positions.sort((a, b) => a - b);
+  return positions;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // POST POSITION CALCULATOR
 // ═══════════════════════════════════════════════════════════════
 function getPostPositions() {
@@ -707,10 +726,10 @@ function buildBeams() {
     box(g, woodMat, beamLenX, height, width, 0, postTop + height/2, z);
   }
 
-  // Cross beams (run along Z) — one per column
+  // Cross beams (run along Z) — evenly spaced, decoupled from post columns
   const beamLenZ = totalZ + 2 * overhang;
-  for (let c = 0; c < gridCols; c++) {
-    const x = colXPositions[c];
+  const crossXPositions = getCrossBeamXPositions();
+  for (const x of crossXPositions) {
     box(g, woodMat, width, height, beamLenZ, x, postTop + height/2, 0);
   }
 }
@@ -719,12 +738,12 @@ function buildRidge() {
   clearGroup('ridge');
   const g = groups.ridge;
   const {size, supportHeight, overhang} = CONFIG.ridge;
-  const {totalX, spacingX, gridCols, colXPositions} = getPostGridDimensions();
+  const {totalX} = getPostGridDimensions();
   const beamTop = CONFIG.foundation.thickness + CONFIG.brickWall.wallHeight + CONFIG.beams.height;
 
-  // Ridge supports — one per column, centered on cross beams
-  for (let c = 0; c < gridCols; c++) {
-    const x = colXPositions[c];
+  // Ridge supports — one per cross beam, centered on cross beams
+  const crossXPositions = getCrossBeamXPositions();
+  for (const x of crossXPositions) {
     box(g, woodMat, size, supportHeight, size, x, beamTop + supportHeight/2, 0);
   }
 
