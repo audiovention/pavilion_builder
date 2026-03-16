@@ -813,27 +813,27 @@ function buildBraces() {
     });
   }
 
-  // Gable-end V-braces (decorative trims under roof slope at each gable end)
-  const {trimWidth, trimHeight, trimLength} = CONFIG.braces;
-  const ridgeTop = beamTop + supportHeight + ridgeSize/2;
-  const ridgeBeamBottom = ridgeTop - ridgeSize;
-  const pitch = Math.atan2(ridgeTop - beamTop, totalZ / 2);
+//   // Gable-end V-braces (decorative trims under roof slope at each gable end)
+//   const {trimWidth, trimHeight, trimLength} = CONFIG.braces;
+//   const ridgeTop = beamTop + supportHeight + ridgeSize/2;
+//   const ridgeBeamBottom = ridgeTop - ridgeSize;
+//   const pitch = Math.atan2(ridgeTop - beamTop, totalZ / 2);
 
-  [-1, 1].forEach(xSide => {
-    const xPos = xSide * totalX / 2;
-    [-1, 1].forEach(zSide => {
-      const cy = ridgeBeamBottom - (trimLength/2) * Math.sin(pitch);
-      const cz = zSide * (trimLength/2) * Math.cos(pitch);
-      const trim = new THREE.Mesh(
-        new THREE.BoxGeometry(trimWidth, trimLength, trimHeight),
-        woodMat
-      );
-      trim.position.set(xPos, cy, cz);
-      trim.rotation.x = zSide * pitch;
-      trim.castShadow = true;
-      g.add(trim);
-    });
-  });
+//   [-1, 1].forEach(xSide => {
+//     const xPos = xSide * totalX / 2;
+//     [-1, 1].forEach(zSide => {
+//       const cy = ridgeBeamBottom - (trimLength/2) * Math.sin(pitch);
+//       const cz = zSide * (trimLength/2) * Math.cos(pitch);
+//       const trim = new THREE.Mesh(
+//         new THREE.BoxGeometry(trimWidth, trimLength, trimHeight),
+//         woodMat
+//       );
+//       trim.position.set(xPos, cy, cz);
+//       trim.rotation.x = zSide * pitch;
+//       trim.castShadow = true;
+//       g.add(trim);
+//     });
+//   });
 }
 
 function buildRafters() {
