@@ -789,25 +789,28 @@ function buildBraces() {
   });
 
   // Remove pairs of opposing braces that overlap (on the same line, pointing at each other)
+  // Rule: once a post has lost a brace, its remaining braces are protected.
   const reach = braceLen * 0.7; // horizontal extent at 45°
   const removed = new Set();
+  const postsWithRemoval = new Set(); // posts that already lost a brace
   for (let i = 0; i < candidates.length; i++) {
     if (removed.has(i)) continue;
     const a = candidates[i];
     for (let j = i + 1; j < candidates.length; j++) {
       if (removed.has(j)) continue;
       const b = candidates[j];
-      if (a.p === b.p) continue; // same post, never overlap
+      if (a.p === b.p) continue;
+      if (postsWithRemoval.has(a.p) || postsWithRemoval.has(b.p)) continue;
       if (a.axis !== b.axis) continue;
-      if (a.dir === b.dir) continue; // same direction, can't overlap
+      if (a.dir === b.dir) continue;
       if (a.axis === 'x') {
         if (Math.abs(a.p.z - b.p.z) > 0.001) continue;
         const dist = Math.abs(a.p.x - b.p.x);
-        if (dist < 2 * reach) { removed.add(i); removed.add(j); }
+        if (dist < 2 * reach) { removed.add(i); removed.add(j); postsWithRemoval.add(a.p); postsWithRemoval.add(b.p); }
       } else {
         if (Math.abs(a.p.x - b.p.x) > 0.001) continue;
         const dist = Math.abs(a.p.z - b.p.z);
-        if (dist < 2 * reach) { removed.add(i); removed.add(j); }
+        if (dist < 2 * reach) { removed.add(i); removed.add(j); postsWithRemoval.add(a.p); postsWithRemoval.add(b.p); }
       }
     }
   }
