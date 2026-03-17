@@ -234,6 +234,12 @@ const GUI_SCHEMA = [
     {k:'sun.latitude',    l:'Latitude (°N)',    mn:20,  mx:65,  s:0.5},
     {k:'sun.orientation', l:'Orientation (°)',   mn:0,   mx:360, s:5}
   ]},
+  { section:'Dimensions', open:true, controls:[
+    {k:'dims',            l:'Show All',    type:'checkbox'},
+    {k:'dims_foundation', l:'Foundation',  type:'checkbox'},
+    {k:'dims_posts',      l:'Posts',       type:'checkbox'},
+    {k:'dims_brickWall',  l:'Brick Wall',  type:'checkbox'}
+  ]},
   { section:'Visibility', open:false, controls:[
     {k:'ground',     l:'Ground',      type:'checkbox'},
     {k:'foundation', l:'Foundation',  type:'checkbox'},
@@ -346,7 +352,8 @@ function shingleTexture() {
 let scene, camera, renderer;
 let sunLight;
 const groups = {};
-const groupNames = ['furniture','foundation','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','kitchen','fence','ground'];
+const dimGroups = {};
+const groupNames = ['furniture','foundation','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','kitchen','fence','ground','dims'];
 let woodMat, concreteMat, roofMat, mortarMat, acaciaMat, cushionMat, metalMat, wickerMat;
 
 function initScene() {
@@ -533,6 +540,129 @@ function clearGroup(name) {
     if (c.geometry) c.geometry.dispose();
     g.remove(c);
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DIMENSION ANNOTATION HELPERS
+// ═══════════════════════════════════════════════════════════════
+function clearDimGroup(name) {
+  const g = dimGroups[name];
+  if (!g) return;
+  while (g.children.length) {
+    const c = g.children[0];
+    if (c.geometry) c.geometry.dispose();
+    if (c.material) {
+      if (c.material.map) c.material.map.dispose();
+      c.material.dispose();
+    }
+    g.remove(c);
+  }
+}
+
+function makeTextSprite(text, color) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  ctx.font = 'bold 28px Consolas, monospace';
+  const tw = ctx.measureText(text).width;
+  const pad = 10;
+  const bgW = tw + pad * 2;
+  const bgH = 36;
+  const bgX = (256 - bgW) / 2;
+  const bgY = (64 - bgH) / 2;
+  const r = 6;
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+  ctx.beginPath();
+  ctx.moveTo(bgX + r, bgY);
+  ctx.lineTo(bgX + bgW - r, bgY);
+  ctx.quadraticCurveTo(bgX + bgW, bgY, bgX + bgW, bgY + r);
+  ctx.lineTo(bgX + bgW, bgY + bgH - r);
+  ctx.quadraticCurveTo(bgX + bgW, bgY + bgH, bgX + bgW - r, bgY + bgH);
+  ctx.lineTo(bgX + r, bgY + bgH);
+  ctx.quadraticCurveTo(bgX, bgY + bgH, bgX, bgY + bgH - r);
+  ctx.lineTo(bgX, bgY + r);
+  ctx.quadraticCurveTo(bgX, bgY, bgX + r, bgY);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = color || '#00DDFF';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 128, 32);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  const mat = new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true });
+  const sprite = new THREE.Sprite(mat);
+  sprite.renderOrder = 999;
+  sprite.scale.set(1.0, 0.25, 1);
+  return sprite;
+}
+
+function createDimension(group, p1, p2, options) {
+  options = options || {};
+  const color = options.color || 0x00DDFF;
+  const offsetDir = options.offsetDir || new THREE.Vector3(0, 1, 0);
+  const offsetDist = options.offsetDist || 0.3;
+  const textColor = options.textColor || '#00DDFF';
+
+  const lineMat = new THREE.LineBasicMaterial({
+    color: color, depthTest: false, transparent: true, opacity: 0.9
+  });
+  const faintMat = new THREE.LineBasicMaterial({
+    color: color, depthTest: false, transparent: true, opacity: 0.4
+  });
+
+  const oDir = offsetDir.clone().normalize().multiplyScalar(offsetDist);
+  const op1 = p1.clone().add(oDir);
+  const op2 = p2.clone().add(oDir);
+
+  // Extension lines
+  const ext1 = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([p1, op1]), faintMat
+  );
+  ext1.renderOrder = 998;
+  group.add(ext1);
+
+  const ext2 = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([p2, op2]), faintMat
+  );
+  ext2.renderOrder = 998;
+  group.add(ext2);
+
+  // Main dimension line
+  const dimLine = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([op1, op2]), lineMat
+  );
+  dimLine.renderOrder = 998;
+  group.add(dimLine);
+
+  // Tick marks
+  const tickDir = (options.tickDir || offsetDir).clone().normalize();
+  const tickLen = 0.08;
+
+  const tickGeo1 = new THREE.BufferGeometry().setFromPoints([
+    op1.clone().add(tickDir.clone().multiplyScalar(tickLen)),
+    op1.clone().sub(tickDir.clone().multiplyScalar(tickLen))
+  ]);
+  const tick1 = new THREE.Line(tickGeo1, lineMat);
+  tick1.renderOrder = 998;
+  group.add(tick1);
+
+  const tickGeo2 = new THREE.BufferGeometry().setFromPoints([
+    op2.clone().add(tickDir.clone().multiplyScalar(tickLen)),
+    op2.clone().sub(tickDir.clone().multiplyScalar(tickLen))
+  ]);
+  const tick2 = new THREE.Line(tickGeo2, lineMat);
+  tick2.renderOrder = 998;
+  group.add(tick2);
+
+  // Label
+  const dist = p1.distanceTo(p2);
+  const label = makeTextSprite(dist.toFixed(2) + ' m', textColor);
+  const mid = op1.clone().add(op2).multiplyScalar(0.5);
+  mid.add(offsetDir.clone().normalize().multiplyScalar(0.08));
+  label.position.copy(mid);
+  group.add(label);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1875,6 +2005,140 @@ function drawCompass() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// DIMENSION ANNOTATIONS
+// ═══════════════════════════════════════════════════════════════
+function buildDimensions() {
+  // Clear all dim sub-groups, then remove them from the dims parent
+  Object.keys(dimGroups).forEach(name => clearDimGroup(name));
+  const g = groups.dims;
+  while (g.children.length) g.remove(g.children[0]);
+
+  // (Re)create sub-groups
+  ['foundation', 'posts', 'brickWall'].forEach(name => {
+    dimGroups[name] = new THREE.Group();
+    g.add(dimGroups[name]);
+    const cb = document.getElementById('c_dims_' + name);
+    if (cb) dimGroups[name].visible = cb.checked;
+  });
+
+  buildDimsFoundation();
+  buildDimsPosts();
+  buildDimsBrickWall();
+}
+
+function buildDimsFoundation() {
+  const sg = dimGroups.foundation;
+  if (!sg) return;
+  const {length, width} = CONFIG.foundation;
+
+  // Length along front edge
+  createDimension(sg,
+    new THREE.Vector3(-length/2, 0, -width/2),
+    new THREE.Vector3( length/2, 0, -width/2),
+    { offsetDir: new THREE.Vector3(0, 0, -1), offsetDist: 0.4,
+      tickDir: new THREE.Vector3(0, 0, -1) }
+  );
+  // Width along left edge
+  createDimension(sg,
+    new THREE.Vector3(-length/2, 0, -width/2),
+    new THREE.Vector3(-length/2, 0,  width/2),
+    { offsetDir: new THREE.Vector3(-1, 0, 0), offsetDist: 0.4,
+      tickDir: new THREE.Vector3(-1, 0, 0) }
+  );
+}
+
+function buildDimsPosts() {
+  const sg = dimGroups.posts;
+  if (!sg) return;
+  const positions = getPostPositions();
+  if (positions.length < 2) return;
+
+  const fndTop = CONFIG.foundation.thickness;
+  const wallHeight = CONFIG.brickWall.wallHeight;
+  const midY = fndTop + wallHeight / 2;
+
+  // Group by row — dimension along X between adjacent posts
+  const rows = {};
+  positions.forEach(p => { if (!rows[p.row]) rows[p.row] = []; rows[p.row].push(p); });
+
+  Object.keys(rows).forEach((rowKey, ri) => {
+    const rowPosts = rows[rowKey].sort((a, b) => a.x - b.x);
+    const row = parseInt(rowKey);
+    const zSign = row === 0 ? -1 : 1;
+    const oDist = 0.4 + ri * 0.15;
+    for (let i = 0; i < rowPosts.length - 1; i++) {
+      createDimension(sg,
+        new THREE.Vector3(rowPosts[i].x, midY, rowPosts[i].z),
+        new THREE.Vector3(rowPosts[i+1].x, midY, rowPosts[i+1].z),
+        { offsetDir: new THREE.Vector3(0, 0, zSign), offsetDist: oDist,
+          tickDir: new THREE.Vector3(0, 0, zSign) }
+      );
+    }
+  });
+
+  // Group by column — dimension along Z between adjacent posts
+  const cols = {};
+  positions.forEach(p => { if (!cols[p.col]) cols[p.col] = []; cols[p.col].push(p); });
+
+  Object.keys(cols).forEach((colKey, ci) => {
+    const colPosts = cols[colKey].sort((a, b) => a.z - b.z);
+    const col = parseInt(colKey);
+    const xSign = col === 0 ? -1 : 1;
+    const oDist = 0.4 + ci * 0.15;
+    for (let i = 0; i < colPosts.length - 1; i++) {
+      createDimension(sg,
+        new THREE.Vector3(colPosts[i].x, midY, colPosts[i].z),
+        new THREE.Vector3(colPosts[i+1].x, midY, colPosts[i+1].z),
+        { offsetDir: new THREE.Vector3(xSign, 0, 0), offsetDist: oDist,
+          tickDir: new THREE.Vector3(xSign, 0, 0) }
+      );
+    }
+  });
+}
+
+function buildDimsBrickWall() {
+  const sg = dimGroups.brickWall;
+  if (!sg) return;
+  const {longSideCoverage, shortSideCoverage, wallHeight} = CONFIG.brickWall;
+  if (longSideCoverage <= 0 && shortSideCoverage <= 0) return;
+
+  const {totalX, totalZ} = getPostGridDimensions();
+  const fndTop = CONFIG.foundation.thickness;
+  const cornerX = totalX / 2;
+  const cornerZ = totalZ / 2;
+  const longSpan = totalX * longSideCoverage;
+  const shortSpan = totalZ * shortSideCoverage;
+
+  // Long wall span
+  if (longSideCoverage > 0) {
+    createDimension(sg,
+      new THREE.Vector3(cornerX, fndTop + wallHeight/2, cornerZ),
+      new THREE.Vector3(cornerX - longSpan, fndTop + wallHeight/2, cornerZ),
+      { offsetDir: new THREE.Vector3(0, 0, 1), offsetDist: 0.3,
+        tickDir: new THREE.Vector3(0, 0, 1) }
+    );
+  }
+  // Short wall span
+  if (shortSideCoverage > 0) {
+    createDimension(sg,
+      new THREE.Vector3(cornerX, fndTop + wallHeight/2, cornerZ),
+      new THREE.Vector3(cornerX, fndTop + wallHeight/2, cornerZ - shortSpan),
+      { offsetDir: new THREE.Vector3(1, 0, 0), offsetDist: 0.3,
+        tickDir: new THREE.Vector3(1, 0, 0) }
+    );
+  }
+  // Wall height (vertical)
+  if (longSideCoverage > 0) {
+    createDimension(sg,
+      new THREE.Vector3(cornerX - longSpan, fndTop, cornerZ),
+      new THREE.Vector3(cornerX - longSpan, fndTop + wallHeight, cornerZ),
+      { offsetDir: new THREE.Vector3(-1, 0, 0), offsetDist: 0.3,
+        tickDir: new THREE.Vector3(-1, 0, 0) }
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // REBUILD ALL
 // ═══════════════════════════════════════════════════════════════
 function rebuildModel() {
@@ -1891,6 +2155,7 @@ function rebuildModel() {
   buildKitchen();
   buildFence();
   buildFurniture();
+  buildDimensions();
   updateSunPosition();
 }
 
@@ -1955,7 +2220,14 @@ window.onValue = function(key, id, val, dec) {
 };
 
 window.onToggleGroup = function(groupName, visible) {
-  if (groups[groupName]) groups[groupName].visible = visible;
+  if (groupName === 'dims') {
+    if (groups.dims) groups.dims.visible = visible;
+  } else if (groupName.startsWith('dims_')) {
+    const section = groupName.slice(5);
+    if (dimGroups[section]) dimGroups[section].visible = visible;
+  } else if (groups[groupName]) {
+    groups[groupName].visible = visible;
+  }
 };
 
 window.toggleGUI = function() {
