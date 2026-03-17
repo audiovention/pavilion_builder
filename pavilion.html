@@ -559,14 +559,25 @@ function getPostGridDimensions() {
 // CROSS BEAM X POSITIONS (decoupled from post columns)
 // ═══════════════════════════════════════════════════════════════
 function getCrossBeamXPositions() {
-  const {totalX} = getPostGridDimensions();
+  const {totalX, colXPositions} = getPostGridDimensions();
   const crossSpacing = CONFIG.beams.crossSpacing;
   const positions = [-totalX/2, totalX/2];
   const n = Math.max(0, Math.round(totalX / crossSpacing) - 1);
   if (n > 0) {
     const step = totalX / (n + 1);
     for (let i = 1; i <= n; i++) {
-      positions.push(-totalX/2 + i * step);
+      let x = -totalX/2 + i * step;
+      // Snap to nearest post column
+      let best = colXPositions[0], bestDist = Math.abs(x - best);
+      for (let j = 1; j < colXPositions.length; j++) {
+        const d = Math.abs(x - colXPositions[j]);
+        if (d < bestDist) { best = colXPositions[j]; bestDist = d; }
+      }
+      x = best;
+      // Avoid duplicating edge positions
+      if (Math.abs(x - (-totalX/2)) > 0.01 && Math.abs(x - totalX/2) > 0.01) {
+        positions.push(x);
+      }
     }
   }
   positions.sort((a, b) => a - b);
@@ -865,6 +876,45 @@ function buildBraces() {
     brace.castShadow = true;
     g.add(brace);
   });
+
+  // Cross beam braces (Z-direction, at non-edge cross beam positions)
+  const crossXPositions_braces = getCrossBeamXPositions();
+  const {longSideCoverage} = CONFIG.brickWall;
+  for (let ci = 0; ci < crossXPositions_braces.length; ci++) {
+    const cx = crossXPositions_braces[ci];
+    // Skip edge cross beams — those already have post-to-beam braces
+    if (Math.abs(cx - (-totalX/2)) < 0.01 || Math.abs(cx - totalX/2) < 0.01) continue;
+
+    // Front row brace: find the post at this column in the front row (row 0)
+    const frontPost = positions.find(p => Math.abs(p.x - cx) < 0.01 && p.row === 0);
+    if (frontPost) {
+      // Z-direction brace from front post toward +Z (inward)
+      [1].forEach(dir => {
+        const geo = createMiteredBraceGeometry(braceLen, size, 'z', dir * size);
+        const brace = new THREE.Mesh(geo, woodMat);
+        brace.position.set(frontPost.x, postTop - braceLen*0.35, frontPost.z + dir * braceLen*0.35);
+        brace.rotation.x = dir * Math.PI/4;
+        brace.castShadow = true;
+        g.add(brace);
+      });
+    }
+
+    // Wall brace: at the back wall (z = totalZ/2), if the wall covers this x position
+    if (longSideCoverage > 0) {
+      const wallRight = totalX/2;
+      const wallLeft = wallRight - totalX * longSideCoverage;
+      if (cx >= wallLeft - 0.01 && cx <= wallRight + 0.01) {
+        // Brace from wall into pavilion (-Z direction)
+        const dir = -1;
+        const geo = createMiteredBraceGeometry(braceLen, size, 'z', dir * size);
+        const brace = new THREE.Mesh(geo, woodMat);
+        brace.position.set(cx, postTop - braceLen*0.35, totalZ/2 + dir * braceLen*0.35);
+        brace.rotation.x = dir * Math.PI/4;
+        brace.castShadow = true;
+        g.add(brace);
+      }
+    }
+  }
 
   // Ridge braces (from support columns to ridge beam, 45° in X-Z plane)
   const {supportHeight, size: ridgeSize} = CONFIG.ridge;
