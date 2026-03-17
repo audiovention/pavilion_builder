@@ -81,7 +81,9 @@ const CONFIG = {
     depth: 0.60,           // depth from wall interior face inward (m)
     kickHeight: 0.17,      // front kickboard height (m)
     counterThick: 0.04,    // wooden counter slab thickness
-    counterOverhang: 0.03  // counter overhang past bricks (front + sides)
+    counterOverhang: 0.03, // counter overhang past bricks (front + sides)
+    sinkSection: 2,        // section index for sink (-1 = none)
+    hobSection: 3          // section index for hobs (-1 = none)
   },
   fence: {
     height: 1.0,
@@ -195,7 +197,9 @@ const GUI_SCHEMA = [
     {k:'kitchen.sections',   l:'Sections',       mn:1,   mx:8,   s:1},
     {k:'kitchen.height',     l:'Height (m)',     mn:0.5, mx:1.2, s:0.05},
     {k:'kitchen.depth',      l:'Depth (m)',      mn:0.3, mx:1.0, s:0.05},
-    {k:'kitchen.kickHeight', l:'Kick H (m)',     mn:0.0, mx:0.25,s:0.01}
+    {k:'kitchen.kickHeight', l:'Kick H (m)',     mn:0.0, mx:0.25,s:0.01},
+    {k:'kitchen.sinkSection', l:'Sink section', mn:-1, mx:7, s:1},
+    {k:'kitchen.hobSection',  l:'Hob section',  mn:-1, mx:7, s:1}
   ]},
   { section:'Fence', open:true, controls:[
     {k:'fence.height',         l:'Height (m)',     mn:0.5, mx:1.5, s:0.05},
@@ -1400,6 +1404,69 @@ function buildKitchen() {
   const counterCX = (kitchenStartX + kitchenEndX) / 2;
   const counterCZ = wallInteriorZ - counterD / 2;
   box(g, acaciaMat, counterW, counterThick, counterD, counterCX, counterY, counterCZ);
+
+  // === KITCHEN WALL LIGHT ===
+  const kitchenLight = new THREE.PointLight(0xFFF0DD, 0.6, 4);
+  kitchenLight.position.set(counterCX, counterY + 0.6, wallInteriorZ - 0.05);
+  g.add(kitchenLight);
+
+  // === SINK ===
+  const {sinkSection, hobSection} = CONFIG.kitchen;
+  const counterTopY = fndTop + dividerCourses * stepH + counterThick;
+
+  if (sinkSection >= 0 && sinkSection < sections) {
+    const sinkMat = new THREE.MeshStandardMaterial({color: 0xB0B8C0, roughness: 0.25, metalness: 0.85});
+    const basinMat = new THREE.MeshStandardMaterial({color: 0x404550, roughness: 0.5, metalness: 0.4});
+    const cx = kitchenStartX - (sinkSection + 0.5) * sectionWidth;
+    const cz = wallInteriorZ - depth / 2;
+
+    const rimW = sectionWidth * 0.75;
+    const rimD = depth * 0.65;
+    // Rim
+    box(g, sinkMat, rimW, 0.012, rimD, cx, counterTopY + 0.006, cz);
+    // Basin
+    box(g, basinMat, rimW - 0.03, 0.12, rimD - 0.03, cx, counterTopY - 0.06, cz);
+    // Faucet column
+    box(g, sinkMat, 0.02, 0.22, 0.02, cx, counterTopY + 0.11, cz + rimD / 2 - 0.02);
+    // Faucet spout
+    box(g, sinkMat, 0.02, 0.02, 0.10, cx, counterTopY + 0.22, cz + rimD / 2 - 0.07);
+  }
+
+  // === GAS HOBS ===
+  if (hobSection >= 0 && hobSection < sections) {
+    const hobPanelMat = new THREE.MeshStandardMaterial({color: 0x2A2A2E, roughness: 0.15, metalness: 0.05});
+    const burnerMat = new THREE.MeshStandardMaterial({color: 0x6A6A6A, roughness: 0.6, metalness: 0.6});
+    const knobMat = new THREE.MeshStandardMaterial({color: 0xC0C0C0, roughness: 0.3, metalness: 0.7});
+    const cx = kitchenStartX - (hobSection + 0.5) * sectionWidth;
+    const cz = wallInteriorZ - depth / 2;
+
+    const panelW = sectionWidth * 0.78;
+    const panelD = depth * 0.70;
+    // Panel
+    box(g, hobPanelMat, panelW, 0.008, panelD, cx, counterTopY + 0.004, cz);
+
+    // 4 burner grates in 2x2 grid
+    const grateSize = 0.06;
+    const barW = 0.008;
+    const barH = 0.01;
+    for (let r = 0; r < 2; r++) {
+      for (let c = 0; c < 2; c++) {
+        const bx = cx + (c - 0.5) * panelW * 0.38;
+        const bz = cz + (r - 0.5) * panelD * 0.38;
+        const by = counterTopY + 0.008 + barH / 2;
+        // Cross bars
+        box(g, burnerMat, grateSize, barH, barW, bx, by, bz);
+        box(g, burnerMat, barW, barH, grateSize, bx, by, bz);
+      }
+    }
+
+    // 4 knobs along front edge
+    for (let k = 0; k < 4; k++) {
+      const kx = cx + (k - 1.5) * panelW * 0.22;
+      const kz = cz - panelD / 2 + 0.02;
+      box(g, knobMat, 0.015, 0.012, 0.015, kx, counterTopY + 0.01, kz);
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
