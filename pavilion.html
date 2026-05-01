@@ -70,7 +70,7 @@ const CONFIG = {
   panelling: { plankWidth: 0.10, plankThickness: 0.012, gap: 0.003, depthOffset: 0.003 },
   braces: { size: 0.15, length: 1.076, trimWidth: 0.05, trimHeight: 0.15, trimLength: 1.070 },
   brickWall: {
-    brickLength: 0.250, brickWidth: 0.120, brickHeight: 0.065,
+    brickLength: 0.250, brickWidth: 0.410, brickHeight: 0.065,
     mortarGap: 0.010, wallHeight: 2.18,
     longSideCoverage: 1.0, shortSideCoverage: 0.23,
     postMinDist: 0.60
@@ -81,6 +81,7 @@ const CONFIG = {
     height: 0.85,          // brick height from foundation top (m)
     depth: 0.60,           // depth from wall interior face inward (m)
     kickHeight: 0.17,      // front kickboard height (m)
+    brickWidth: 0.120,     // kitchen brick width (m)
     counterThick: 0.04,    // wooden counter slab thickness
     counterOverhang: 0.03, // counter overhang past bricks (front + sides)
     sinkSection: 0,        // section index for sink (-1 = none)
@@ -229,6 +230,7 @@ const GUI_SCHEMA = [
     {k:'kitchen.height',     l:'Height (m)',     mn:0.5, mx:1.2, s:0.05},
     {k:'kitchen.depth',      l:'Depth (m)',      mn:0.3, mx:1.0, s:0.05},
     {k:'kitchen.kickHeight', l:'Kick H (m)',     mn:0.0, mx:0.25,s:0.01},
+    {k:'kitchen.brickWidth', l:'Brick W (m)',    mn:0.06,mx:0.50,s:0.005},
     {k:'kitchen.sinkSection', l:'Sink section', mn:-1, mx:7, s:1},
     {k:'kitchen.hobSection',  l:'Hob section',  mn:-1, mx:7, s:1}
   ]},
@@ -1501,7 +1503,9 @@ function buildKitchen() {
   clearGroup('kitchen');
   const g = groups.kitchen;
   const {length, sections, height, depth, kickHeight, counterThick, counterOverhang} = CONFIG.kitchen;
-  const {brickLength, brickWidth, brickHeight, mortarGap} = CONFIG.brickWall;
+  const {brickLength, brickHeight, mortarGap} = CONFIG.brickWall;
+  const wallBrickWidth = CONFIG.brickWall.brickWidth;
+  const brickWidth = CONFIG.kitchen.brickWidth;
 
   const stepL = brickLength + mortarGap;
   const stepH = brickHeight + mortarGap;
@@ -1515,8 +1519,8 @@ function buildKitchen() {
   // Position relative to back wall interior face
   const cornerX = totalX / 2;
   const cornerZ = totalZ / 2;
-  const wallInteriorZ = cornerZ - brickWidth / 2;
-  const kitchenStartX = cornerX - brickWidth / 2; // flush with short wall interior
+  const wallInteriorZ = cornerZ - wallBrickWidth / 2;
+  const kitchenStartX = cornerX - wallBrickWidth / 2; // flush with short wall interior
   const kitchenEndX = kitchenStartX - length;
   const sectionWidth = length / sections;
   const cabinetFrontZ = wallInteriorZ - depth;
