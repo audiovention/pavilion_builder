@@ -132,7 +132,10 @@ const CONFIG = {
     loungeSlatThick: 0.018,
     loungeSeatSlats: 6,
     loungeBackSlats: 5,
+    loungeCushionThick: 0.06,
     loungeOffsetFromTable: 0.30,
+    loungeOffsetX: 0.25,
+    loungeAngle: 15,
     // Dining table + chairs (front-right corner)
     tableLength: 2.24,
     tableWidth: 0.93,
@@ -262,7 +265,10 @@ const GUI_SCHEMA = [
     {k:'furniture.loungeArmH',            l:'Arm H (m)',          mn:0.10, mx:0.35, s:0.01},
     {k:'furniture.loungeSeatSlats',       l:'Seat slats',         mn:3,    mx:10,   s:1},
     {k:'furniture.loungeBackSlats',       l:'Back slats',         mn:3,    mx:8,    s:1},
-    {k:'furniture.loungeOffsetFromTable', l:'Gap from table (m)', mn:0.0,  mx:1.0,  s:0.05}
+    {k:'furniture.loungeCushionThick',    l:'Cushion thick (m)',  mn:0.0,  mx:0.15, s:0.01},
+    {k:'furniture.loungeOffsetFromTable', l:'Gap from table (m)', mn:0.0,  mx:1.0,  s:0.05},
+    {k:'furniture.loungeOffsetX',         l:'Offset X (m)',       mn:-1.0, mx:1.5,  s:0.05},
+    {k:'furniture.loungeAngle',           l:'Angle (deg)',        mn:-45,  mx:45,   s:1}
   ]},
   { section:'Dining Table', open:false, controls:[
     {k:'furniture.tableLength',        l:'Table L (m)',      mn:1.0, mx:3.0, s:0.05},
@@ -1940,30 +1946,27 @@ function buildFurniture() {
     const lFT = F.loungeFrameThick;
     const lST = F.loungeSlatThick;
 
-    const lcX = tableCX;
-    const lcZ = tableCZ + F.coffeTableSize/2 + F.loungeOffsetFromTable + lD/2;
+    // Build into a local sub-group centered at origin, then position + rotate
+    const lc = new THREE.Group();
+    const lx0 = -lW/2, lx1 = lW/2;
+    const lz0 = -lD/2, lz1 = lD/2;  // -Z = front (faces sofa)
 
-    const lx0 = lcX - lW/2;
-    const lx1 = lcX + lW/2;
-    const lz0 = lcZ - lD/2;
-    const lz1 = lcZ + lD/2;
-
-    // 4 legs — front legs to seat height, back legs extended to total height
+    // 4 legs — front legs to seat height, back legs to total height
     const frontLegY = baseY + lSeatH/2;
     const backLegY  = baseY + lTotalH/2;
-    box(g, acaciaMat, lFT, lSeatH,  lFT, lx0, frontLegY, lz0);
-    box(g, acaciaMat, lFT, lSeatH,  lFT, lx1, frontLegY, lz0);
-    box(g, acaciaMat, lFT, lTotalH, lFT, lx0, backLegY,  lz1);
-    box(g, acaciaMat, lFT, lTotalH, lFT, lx1, backLegY,  lz1);
+    box(lc, acaciaMat, lFT, lSeatH,  lFT, lx0, frontLegY, lz0);
+    box(lc, acaciaMat, lFT, lSeatH,  lFT, lx1, frontLegY, lz0);
+    box(lc, acaciaMat, lFT, lTotalH, lFT, lx0, backLegY,  lz1);
+    box(lc, acaciaMat, lFT, lTotalH, lFT, lx1, backLegY,  lz1);
 
-    // Seat frame rails (4 sides, just below seat slats)
+    // Seat frame rails
     const lRailY = baseY + lSeatH - lFT/2;
-    box(g, acaciaMat, lW,  lFT, lFT, lcX, lRailY, lz0);
-    box(g, acaciaMat, lW,  lFT, lFT, lcX, lRailY, lz1);
-    box(g, acaciaMat, lFT, lFT, lD,  lx0, lRailY, lcZ);
-    box(g, acaciaMat, lFT, lFT, lD,  lx1, lRailY, lcZ);
+    box(lc, acaciaMat, lW,  lFT, lFT, 0,   lRailY, lz0);
+    box(lc, acaciaMat, lW,  lFT, lFT, 0,   lRailY, lz1);
+    box(lc, acaciaMat, lFT, lFT, lD,  lx0, lRailY, 0);
+    box(lc, acaciaMat, lFT, lFT, lD,  lx1, lRailY, 0);
 
-    // Slatted seat — slats run along X, spaced along Z
+    // Slatted seat
     const lSeatGap = 0.008;
     const lSeatInner = lD - 2*lFT;
     const lSeatTotalGap = (F.loungeSeatSlats - 1) * lSeatGap;
@@ -1972,10 +1975,10 @@ function buildFurniture() {
     const lSeatStartZ = lz0 + lFT + lSeatSlatW/2;
     for (let i = 0; i < F.loungeSeatSlats; i++) {
       const sz = lSeatStartZ + i * (lSeatSlatW + lSeatGap);
-      box(g, acaciaMat, lW - 2*lFT, lST, lSeatSlatW, lcX, lSeatTopY, sz);
+      box(lc, acaciaMat, lW - 2*lFT, lST, lSeatSlatW, 0, lSeatTopY, sz);
     }
 
-    // Slatted back — horizontal slats between the two back posts
+    // Slatted back
     const lBackBottomY = baseY + lSeatH + lFT;
     const lBackTopY = baseY + lTotalH - lFT/2;
     const lBackSpan = lBackTopY - lBackBottomY;
@@ -1984,14 +1987,29 @@ function buildFurniture() {
     const lBackSlatH = (lBackSpan - lBackTotalGap) / F.loungeBackSlats;
     for (let i = 0; i < F.loungeBackSlats; i++) {
       const sy = lBackBottomY + lBackSlatH/2 + i * (lBackSlatH + lBackGap);
-      box(g, acaciaMat, lW - 2*lFT, lBackSlatH, lST, lcX, sy, lz1 - lFT/2);
+      box(lc, acaciaMat, lW - 2*lFT, lBackSlatH, lST, 0, sy, lz1 - lFT/2);
     }
 
-    // Two armrests — flat planks bridging front and back legs
+    // Armrests
     const lArmTopY = baseY + lSeatH + lArmH;
     const lArmThick = 0.025;
-    box(g, acaciaMat, lFT*1.1, lArmThick, lD, lx0, lArmTopY, lcZ);
-    box(g, acaciaMat, lFT*1.1, lArmThick, lD, lx1, lArmTopY, lcZ);
+    box(lc, acaciaMat, lFT*1.1, lArmThick, lD, lx0, lArmTopY, 0);
+    box(lc, acaciaMat, lFT*1.1, lArmThick, lD, lx1, lArmTopY, 0);
+
+    // Seat cushion on top of the slats
+    if (F.loungeCushionThick > 0) {
+      const lCushW = lW - 2*lFT - 0.02;
+      const lCushD = lD - 2*lFT - 0.02;
+      const lCushY = baseY + lSeatH + lST + F.loungeCushionThick/2;
+      box(lc, cushionMat, lCushW, F.loungeCushionThick, lCushD, 0, lCushY, 0);
+    }
+
+    // Anchor + slight angle relative to coffee table
+    const lcX = tableCX + F.loungeOffsetX;
+    const lcZ = tableCZ + F.coffeTableSize/2 + F.loungeOffsetFromTable + lD/2;
+    lc.position.set(lcX, 0, lcZ);
+    lc.rotation.y = F.loungeAngle * Math.PI / 180;
+    g.add(lc);
   }
 
   // ════════════════════════════════════════════════════════════
