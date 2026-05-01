@@ -61,6 +61,7 @@ canvas{display:block}
 // ═══════════════════════════════════════════════════════════════
 const CONFIG = {
   foundation: { length: 7.16, width: 6.16, thickness: 0.15, extension: 0.5 },
+  pathways: { frontLength: 0.8, leftLength: 2.2, width: 0.9, thickness: 0.075 },
   posts: { size: 0.12, gridCols: 4, gridRows: 4, innerColInset: 0.4, innerColOffset: 0.3, innerRowInset: 0.235, innerRowOffset: 0.23 },
   beams: { width: 0.15, height: 0.20, overhang: 0.61, crossSpacing: 2.5 },
   ridge: { size: 0.15, supportHeight: 1.045, overhang: 0.61 },
@@ -151,6 +152,12 @@ const GUI_SCHEMA = [
     {k:'foundation.width',     l:'Width (m)',     mn:2,   mx:8,   s:0.1},
     {k:'foundation.thickness', l:'Thickness (m)', mn:0.05,mx:0.3, s:0.01},
     {k:'foundation.extension', l:'Extension (m)', mn:0.0, mx:0.7, s:0.01}
+  ]},
+  { section:'Pathways', open:false, controls:[
+    {k:'pathways.frontLength', l:'Front length (m)', mn:0,    mx:5.0, s:0.1},
+    {k:'pathways.leftLength',  l:'Left length (m)',  mn:0,    mx:5.0, s:0.1},
+    {k:'pathways.width',       l:'Width (m)',        mn:0.3,  mx:4.0, s:0.1},
+    {k:'pathways.thickness',   l:'Thickness (m)',    mn:0.02, mx:0.20,s:0.01}
   ]},
   { section:'Posts', open:true, controls:[
     {k:'posts.size',           l:'Size (m)',           mn:0.08,mx:0.25,s:0.01},
@@ -355,7 +362,7 @@ let scene, camera, renderer;
 let sunLight;
 const groups = {};
 const dimGroups = {};
-const groupNames = ['furniture','foundation','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','kitchen','fence','ground','dims'];
+const groupNames = ['furniture','foundation','pathways','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','kitchen','fence','ground','dims'];
 let woodMat, concreteMat, roofMat, mortarMat, acaciaMat, cushionMat, metalMat, wickerMat;
 
 function initScene() {
@@ -890,6 +897,33 @@ function buildFoundation() {
   clearGroup('foundation');
   const {length, width, thickness} = CONFIG.foundation;
   box(groups.foundation, concreteMat, length, thickness, width, 0, thickness/2, 0);
+}
+
+function buildPathways() {
+  clearGroup('pathways');
+  const {frontLength, leftLength, width, thickness} = CONFIG.pathways;
+  if (width <= 0 || thickness <= 0) return;
+  const fnd = CONFIG.foundation;
+  const {frontOpening, leftOpening} = CONFIG.fence;
+  const segments = getFenceSegments();
+
+  if (frontOpening > 0 && frontLength > 0) {
+    const seg = segments.find(s => s.side === 'front' && s.sideIndex === frontOpening);
+    if (seg) {
+      const cx = (seg.x1 + seg.x2) / 2;
+      const pz = -fnd.width/2 - frontLength/2;
+      box(groups.pathways, concreteMat, width, thickness, frontLength, cx, thickness/2, pz);
+    }
+  }
+
+  if (leftOpening > 0 && leftLength > 0) {
+    const seg = segments.find(s => s.side === 'left' && s.sideIndex === leftOpening);
+    if (seg) {
+      const cz = (seg.z1 + seg.z2) / 2;
+      const px = -fnd.length/2 - leftLength/2;
+      box(groups.pathways, concreteMat, leftLength, thickness, width, px, thickness/2, cz);
+    }
+  }
 }
 
 function buildPosts() {
@@ -2157,6 +2191,7 @@ function buildDimsBrickWall() {
 function rebuildModel() {
   buildGround();
   buildFoundation();
+  buildPathways();
   buildPosts();
   buildBeams();
   buildRidge();
