@@ -61,7 +61,7 @@ canvas{display:block}
 // ═══════════════════════════════════════════════════════════════
 const CONFIG = {
   foundation: { length: 7.16, width: 6.16, thickness: 0.15, extension: 0.5 },
-  posts: { size: 0.12, gridCols: 4, gridRows: 4, innerColInset: 0.4, innerColOffset: 0.3 },
+  posts: { size: 0.12, gridCols: 4, gridRows: 4, innerColInset: 0.4, innerColOffset: 0.3, innerRowInset: 0.235, innerRowOffset: 0.23 },
   beams: { width: 0.15, height: 0.20, overhang: 0.61, crossSpacing: 2.5 },
   ridge: { size: 0.15, supportHeight: 1.045, overhang: 0.61 },
   rafters: { width: 0.05, height: 0.15, spacing: 0.61, overhang: 0.35 },
@@ -157,7 +157,9 @@ const GUI_SCHEMA = [
     {k:'posts.gridCols',       l:'Columns',            mn:2,   mx:6,   s:1},
     {k:'posts.gridRows',       l:'Rows',               mn:2,   mx:4,   s:1},
     {k:'posts.innerColInset',  l:'Inner Col Inset (m)',  mn:0,   mx:1.0, s:0.01},
-    {k:'posts.innerColOffset', l:'Inner Col Offset (m)', mn:-1.0,mx:1.0, s:0.01}
+    {k:'posts.innerColOffset', l:'Inner Col Offset (m)', mn:-1.0,mx:1.0, s:0.01},
+    {k:'posts.innerRowInset',  l:'Inner Row Inset (m)',  mn:0,   mx:1.0, s:0.01},
+    {k:'posts.innerRowOffset', l:'Inner Row Offset (m)', mn:-1.0,mx:1.0, s:0.01}
   ]},
   { section:'Beams', open:false, controls:[
     {k:'beams.width',    l:'Width (m)',     mn:0.05,mx:0.25,s:0.01},
@@ -670,7 +672,7 @@ function createDimension(group, p1, p2, options) {
 // ═══════════════════════════════════════════════════════════════
 function getPostGridDimensions() {
   const {length, width, extension} = CONFIG.foundation;
-  const {gridCols, gridRows, innerColInset, innerColOffset} = CONFIG.posts;
+  const {gridCols, gridRows, innerColInset, innerColOffset, innerRowInset, innerRowOffset} = CONFIG.posts;
   const totalX = length - 2 * extension;
   const totalZ = width - 2 * extension;
   const spacingX = gridCols > 1 ? totalX / (gridCols - 1) : totalX;
@@ -686,7 +688,18 @@ function getPostGridDimensions() {
     }
     colXPositions.push(x);
   }
-  return {totalX, totalZ, spacingX, spacingZ, gridCols, gridRows, colXPositions};
+  // Per-row Z positions with inner rows shifted toward center
+  const rowZPositions = [];
+  for (let r = 0; r < gridRows; r++) {
+    let z = -totalZ/2 + r * spacingZ;
+    if (r > 0 && r < gridRows - 1) {
+      if (z < 0) z += innerRowInset;
+      else if (z > 0) z -= innerRowInset;
+      z += innerRowOffset;
+    }
+    rowZPositions.push(z);
+  }
+  return {totalX, totalZ, spacingX, spacingZ, gridCols, gridRows, colXPositions, rowZPositions};
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -722,7 +735,7 @@ function getCrossBeamXPositions() {
 // POST POSITION CALCULATOR
 // ═══════════════════════════════════════════════════════════════
 function getPostPositions() {
-  const {totalX, totalZ, spacingX, spacingZ, gridCols, gridRows, colXPositions} = getPostGridDimensions();
+  const {totalX, totalZ, spacingX, spacingZ, gridCols, gridRows, colXPositions, rowZPositions} = getPostGridDimensions();
   const {longSideCoverage, shortSideCoverage, postMinDist} = CONFIG.brickWall;
   const postSize = CONFIG.posts.size;
   const positions = [];
@@ -731,7 +744,7 @@ function getPostPositions() {
     for (let r = 0; r < gridRows; r++) {
       if (c > 0 && c < gridCols - 1 && r > 0 && r < gridRows - 1) continue;
       const x = colXPositions[c];
-      const z = -totalZ/2 + r * spacingZ;
+      const z = rowZPositions[r];
 
       // Omit posts behind or too close to the brick wall
       const isBackRow = r === gridRows - 1;
@@ -894,14 +907,14 @@ function buildBeams() {
   clearGroup('beams');
   const g = groups.beams;
   const {width, height, overhang} = CONFIG.beams;
-  const {totalX, totalZ, spacingX, spacingZ, gridCols, gridRows, colXPositions} = getPostGridDimensions();
+  const {totalX, totalZ, spacingX, spacingZ, gridCols, gridRows, colXPositions, rowZPositions} = getPostGridDimensions();
   const postTop = CONFIG.foundation.thickness + CONFIG.brickWall.wallHeight;
 
   // Long beams (run along X) — only at the ends
   const beamLenX = totalX + 2 * overhang;
   for (let r = 0; r < gridRows; r++) {
     if (r > 0 && r < gridRows - 1) continue;
-    const z = -totalZ/2 + r * spacingZ;
+    const z = rowZPositions[r];
     box(g, woodMat, beamLenX, height, width, 0, postTop + height/2, z);
   }
 
