@@ -445,7 +445,7 @@ const groups = {};
 const dimGroups = {};
 const groupNames = ['furniture','foundation','pathways','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','kitchen','kitchenBricks','kitchenBackdrop','kitchenSlab','fence','ground','dims'];
 let woodMat, concreteMat, roofMat, mortarMat, acaciaMat, cushionMat, metalMat, wickerMat;
-let stainlessMat, stainlessDark, counterMat, glassHobMat, hobMatteMat, hobBurnerMat, hobKnobMat,
+let stainlessMat, stainlessDark, cabinetMat, counterMat, glassHobMat, hobMatteMat, hobBurnerMat, hobKnobMat,
     sinkNayaMat, sinkNayaBasin, sinkZiaMat, sinkZiaBasin, sinkEridanMat, sinkEridanBasin;
 let currentTab = 'pavilion';
 
@@ -500,6 +500,7 @@ function initScene() {
   // Kitchen materials
   stainlessMat  = new THREE.MeshStandardMaterial({ color: 0xDDE1E6, metalness: 0.55, roughness: 0.38 });
   stainlessDark = new THREE.MeshStandardMaterial({ color: 0x9CA0A4, metalness: 0.55, roughness: 0.48 });
+  cabinetMat    = new THREE.MeshStandardMaterial({ color: 0xB8BCC0, metalness: 0.45, roughness: 0.55 });
   const wTexK = woodTexture();
   counterMat    = new THREE.MeshStandardMaterial({ map: wTexK, color: 0x8B5A2B, roughness: 0.55, metalness: 0.0 });
   glassHobMat   = new THREE.MeshStandardMaterial({ color: 0x0B0B0E, metalness: 0.10, roughness: 0.05 });
@@ -1557,11 +1558,13 @@ function updateStats(brickCount, courses) {
 // ═══════════════════════════════════════════════════════════════
 // Module geometry table — physical dimensions of each VEVOR built-in (m)
 //   type 0=open, 1=door, 2=trash, 3=drawer3
+// Body depth (d): how far the drawer/cabinet extends back from the face plate.
+// Door has no body (d = 0) — it's a face panel covering an open under-counter space.
 const KITCHEN_MOD = [
-  { w: 0,     h: 0,     label: 'open' },
-  { w: 0.79,  h: 0.79,  label: 'door' },
-  { w: 0.344, h: 0.655, label: 'trash' },
-  { w: 0.46,  h: 0.59,  label: 'drawer3' }
+  { w: 0,     h: 0,     d: 0,     label: 'open' },
+  { w: 0.79,  h: 0.79,  d: 0,     label: 'door' },
+  { w: 0.344, h: 0.655, d: 0.500, label: 'trash' },
+  { w: 0.46,  h: 0.59,  d: 0.590, label: 'drawer3' }
 ];
 
 // Sink rim outer dimensions (m). Indexed by sinkModel.
@@ -1818,9 +1821,11 @@ function buildKitchen() {
     if (s.type === 0) continue;
     const { moduleBottomY, moduleTopY } = slotVerticalBounds(s, fndTop, counterUndersideY, stepH);
     const cy = (moduleTopY + moduleBottomY) / 2;
-    if (s.type === 1) buildModDoor(g, s.centerX, cy, faceZ, s.w, s.h);
-    else if (s.type === 2) buildModTrash(g, s.centerX, cy, faceZ, s.w, s.h);
-    else if (s.type === 3) buildModDrawer3(g, s.centerX, cy, faceZ, s.w, s.h);
+    // Stainless face plates use fixed product dimensions (not scaled to slot width).
+    const mod = KITCHEN_MOD[s.type];
+    if (s.type === 1) buildModDoor(g, s.centerX, cy, faceZ, mod.w, mod.h);
+    else if (s.type === 2) buildModTrash(g, s.centerX, cy, faceZ, mod.w, mod.h, mod.d);
+    else if (s.type === 3) buildModDrawer3(g, s.centerX, cy, faceZ, mod.w, mod.h, mod.d);
   }
 
   // ============== SINK + HOB ==============
@@ -1874,7 +1879,30 @@ function buildModDoor(g, cx, cy, faceZ, w, h) {
   }
 }
 
-function buildModTrash(g, cx, cy, faceZ, w, h) {
+// Open-top stainless tray body for a single drawer.
+// Front face plate is already drawn at faceZ by the caller.
+function buildDrawerBody(g, cx, cy, faceZ, w, h, d) {
+  if (d <= 0) return;
+  const wallT = 0.012;
+  const bodyFrontZ = faceZ + 0.007; // just behind the 14mm face plate
+  const bodyCz = bodyFrontZ + d / 2;
+  const bodyBackZ = bodyFrontZ + d;
+  const innerW = w - 2 * wallT;
+  // Bottom
+  box(g, cabinetMat, innerW, wallT, d,
+      cx, cy - h / 2 + wallT / 2, bodyCz);
+  // Back
+  box(g, cabinetMat, innerW, h - wallT, wallT,
+      cx, cy + wallT / 2, bodyBackZ - wallT / 2);
+  // Left
+  box(g, cabinetMat, wallT, h, d,
+      cx - w / 2 + wallT / 2, cy, bodyCz);
+  // Right
+  box(g, cabinetMat, wallT, h, d,
+      cx + w / 2 - wallT / 2, cy, bodyCz);
+}
+
+function buildModTrash(g, cx, cy, faceZ, w, h, d) {
   // Single drawer face
   box(g, stainlessMat, w, h, 0.014, cx, cy, faceZ);
   // Horizontal 5" bar handle centered
@@ -1883,9 +1911,11 @@ function buildModTrash(g, cx, cy, faceZ, w, h) {
   // Handle brackets at each end
   box(g, stainlessDark, 0.009, 0.018, 0.022, cx - handleW/2, cy, faceZ - 0.011);
   box(g, stainlessDark, 0.009, 0.018, 0.022, cx + handleW/2, cy, faceZ - 0.011);
+  // Drawer body extending back into the cabinet
+  buildDrawerBody(g, cx, cy, faceZ, w, h, d);
 }
 
-function buildModDrawer3(g, cx, cy, faceZ, w, h) {
+function buildModDrawer3(g, cx, cy, faceZ, w, h, d) {
   const seam = 0.0025;
   const drawerH = h / 3;
   const faceH = drawerH - seam;
@@ -1898,6 +1928,8 @@ function buildModDrawer3(g, cx, cy, faceZ, w, h) {
     box(g, stainlessDark, handleW, 0.012, 0.022, cx, dCy, faceZ - 0.015);
     box(g, stainlessDark, 0.008, 0.016, 0.020, cx - handleW/2, dCy, faceZ - 0.011);
     box(g, stainlessDark, 0.008, 0.016, 0.020, cx + handleW/2, dCy, faceZ - 0.011);
+    // Drawer body for this drawer (3 stacked open-top trays)
+    buildDrawerBody(g, cx, dCy, faceZ, w, faceH, d);
   }
 }
 
