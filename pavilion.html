@@ -44,6 +44,11 @@ canvas{display:block}
 .gc{display:flex;align-items:center;margin-bottom:4px;gap:8px}
 .gc label{font-size:11px;color:#888;cursor:pointer;user-select:none}
 .gc input[type=checkbox]{accent-color:#4a9eff;cursor:pointer;width:14px;height:14px}
+.gs-sel{flex:1;min-width:0;font-size:11px;font-family:Consolas,monospace;color:#4a9eff;
+  background:rgba(74,158,255,0.08);border:1px solid rgba(74,158,255,0.15);border-radius:3px;
+  padding:3px 6px;outline:none;cursor:pointer}
+.gs-sel:focus{border-color:#4a9eff}
+.gs-sel option{background:#1e1e1e;color:#4a9eff}
 #info{position:fixed;bottom:8px;left:10px;font-size:11px;color:rgba(255,255,255,0.35);z-index:100}
 #stats{position:fixed;top:8px;left:10px;font-size:11px;color:rgba(255,255,255,0.5);z-index:100;
   background:rgba(0,0,0,0.5);padding:6px 10px;border-radius:4px}
@@ -105,7 +110,8 @@ const CONFIG = {
     sinkModel: 1,           // 0=Naya 8, 1=Zia 8S, 2=Eridan
     sinkSlot: 1,            // 1-indexed slot the sink sits above
     hobModel: 1,            // 0=electric ceramic, 1=gas
-    hobSlot: 4
+    hobSlot: 4,
+    doorModel: 0            // index into DOOR_MODELS
   },
   fence: {
     height: 1.0,
@@ -266,7 +272,9 @@ const GUI_SCHEMA = [
     {k:'kitchen.sinkModel', l:'Sink (0/1/2)', mn:0, mx:2, s:1},
     {k:'kitchen.sinkSlot',  l:'Sink slot',    mn:1, mx:8, s:1},
     {k:'kitchen.hobModel',  l:'Hob (0/1)',    mn:0, mx:1, s:1},
-    {k:'kitchen.hobSlot',   l:'Hob slot',     mn:1, mx:8, s:1}
+    {k:'kitchen.hobSlot',   l:'Hob slot',     mn:1, mx:8, s:1},
+    {k:'kitchen.doorModel', l:'Door size',    type:'select',
+      options:['790×790 mm','610×610 mm','762×533 mm','915×610 mm','915×533 mm','838×558 mm','863×482 mm']}
   ]},
   { section:'Visibility', tab:'kitchen', open:true, controls:[
     {k:'kitchenBricks', l:'Show bricks', type:'checkbox'}
@@ -1574,6 +1582,18 @@ const SINK_RIMS = [
   { w: 0.880, d: 0.500 }  // 2 = Deante Eridan
 ];
 
+// Door panel models (each is a French-door pair with the same handle style;
+// only outer width × height changes). Indexed by kitchen.doorModel.
+const DOOR_MODELS = [
+  { w: 0.790, h: 0.790, label: '790×790 mm' },
+  { w: 0.610, h: 0.610, label: '610×610 mm' },
+  { w: 0.762, h: 0.533, label: '762×533 mm' },
+  { w: 0.915, h: 0.610, label: '915×610 mm' },
+  { w: 0.915, h: 0.533, label: '915×533 mm' },
+  { w: 0.838, h: 0.558, label: '838×558 mm' },
+  { w: 0.863, h: 0.482, label: '863×482 mm' }
+];
+
 // Slot vertical placement:
 //   door (type 1)  — top flush with counter underside (existing behavior).
 //   trash (type 2) — bottom at 2 brick courses above foundation; top brick course fills the gap.
@@ -1605,9 +1625,19 @@ function buildKitchen() {
   for (let i = 1; i <= slotCount; i++) {
     slotTypes.push(Math.max(0, Math.min(3, Math.round(K['slot' + i + 'Type']))));
   }
+  // Resolve door dimensions from the selected DOOR_MODELS entry.
+  const doorModelIdx = Math.max(0, Math.min(DOOR_MODELS.length - 1, Math.round(K.doorModel)));
+  const doorW = DOOR_MODELS[doorModelIdx].w;
+  const doorH = DOOR_MODELS[doorModelIdx].h;
+  // Lookup module footprint (w, h) for a given slot type; doors use the selected DOOR_MODELS entry.
+  const modSize = (t) => {
+    if (t === 1) return { w: doorW, h: doorH, d: 0 };
+    return KITCHEN_MOD[t];
+  };
+
   // Open slots get a placeholder display width matching a drawer3 so they breathe visually
   const OPEN_W = 0.46;
-  const moduleWidths = slotTypes.map(t => (t === 0 ? OPEN_W : KITCHEN_MOD[t].w));
+  const moduleWidths = slotTypes.map(t => (t === 0 ? OPEN_W : modSize(t).w));
 
   // Sink and hob slots get widened so the appliance rim doesn't overlap the side dividers.
   const sinkSlotIdx0 = Math.max(1, Math.min(slotCount, Math.round(K.sinkSlot))) - 1;
@@ -1657,7 +1687,7 @@ function buildKitchen() {
       centerX: cursorX - w / 2,
       w,
       type,
-      h: (type === 0 ? 0 : KITCHEN_MOD[type].h)
+      h: (type === 0 ? 0 : modSize(type).h)
     });
     cursorX -= w;
   }
@@ -1822,7 +1852,7 @@ function buildKitchen() {
     const { moduleBottomY, moduleTopY } = slotVerticalBounds(s, fndTop, counterUndersideY, stepH);
     const cy = (moduleTopY + moduleBottomY) / 2;
     // Stainless face plates use fixed product dimensions (not scaled to slot width).
-    const mod = KITCHEN_MOD[s.type];
+    const mod = modSize(s.type);
     if (s.type === 1) buildModDoor(g, s.centerX, cy, faceZ, mod.w, mod.h);
     else if (s.type === 2) buildModTrash(g, s.centerX, cy, faceZ, mod.w, mod.h, mod.d);
     else if (s.type === 3) buildModDrawer3(g, s.centerX, cy, faceZ, mod.w, mod.h, mod.d);
@@ -2914,6 +2944,16 @@ function createGUI() {
             onchange="onToggleGroup('${ctrl.k}',this.checked)">
           <label for="c_${ctrl.k}">${ctrl.l}</label>
         </div>`;
+      } else if (ctrl.type === 'select') {
+        const val = cfgGet(ctrl.k);
+        const id = ctrl.k.replace(/\./g, '_');
+        const opts = ctrl.options.map((opt, i) =>
+          `<option value="${i}"${i === val ? ' selected' : ''}>${opt}</option>`
+        ).join('');
+        html += `<div class="gr">
+          <label>${ctrl.l}</label>
+          <select class="gs-sel" id="s_${id}" onchange="onSelect('${ctrl.k}', this.value)">${opts}</select>
+        </div>`;
       } else {
         const val = cfgGet(ctrl.k);
         const dec = ctrl.s < 0.01 ? 3 : ctrl.s < 0.1 ? 2 : ctrl.s >= 1 ? 0 : 1;
@@ -2939,6 +2979,11 @@ window.onSlider = function(key, id, val, dec) {
   cfgSet(key, val);
   document.getElementById('v_'+id).value = val.toFixed(dec);
   if (key.startsWith('sun.')) { updateSunPosition(); } else { scheduleRebuild(); }
+};
+
+window.onSelect = function(key, val) {
+  cfgSet(key, parseInt(val, 10));
+  scheduleRebuild();
 };
 
 window.onValue = function(key, id, val, dec) {
