@@ -88,7 +88,8 @@ const CONFIG = {
     brickLength: 0.250, brickWidth: 0.410, brickHeight: 0.065,
     mortarGap: 0.010, wallHeight: 2.18,
     longSideCoverage: 1.0, shortSideCoverage: 0.23,
-    postMinDist: 0.60
+    postMinDist: 0.60,
+    material: 0   // 0 = brick (geometric instances), 1 = stone (textured slab)
   },
   kitchen: {
     length: 4.0,            // total run length (m)
@@ -241,6 +242,7 @@ const GUI_SCHEMA = [
     {k:'panelling.depthOffset',    l:'Depth ofs (m)', mn:0.0,  mx:0.010,s:0.001}
   ]},
   { section:'Brick Wall', tab:'pavilion', open:false, controls:[
+    {k:'brickWall.material',         l:'Material',      type:'select', options:['Brick','Stone (procedural)','Stone (damaged wall)']},
     {k:'brickWall.brickLength',      l:'Brick L (m)',   mn:0.15,mx:0.35,s:0.005},
     {k:'brickWall.brickWidth',       l:'Brick W (m)',   mn:0.06,mx:0.50,s:0.005},
     {k:'brickWall.brickHeight',      l:'Brick H (m)',   mn:0.04,mx:0.10,s:0.005},
@@ -421,6 +423,79 @@ function concreteTexture() {
   return tex;
 }
 
+function stoneTexture() {
+  const W = 512, H = 512;
+  const [c, ctx] = makeCanvas(W, H);
+  // Mortar background
+  ctx.fillStyle = '#7a7268';
+  ctx.fillRect(0, 0, W, H);
+
+  // Jittered grid of stone centers, alternating rows offset so the pattern tiles seamlessly.
+  const grid = 95; // approximate stone diameter
+  const cols = Math.ceil(W / grid) + 2;
+  const rows = Math.ceil(H / grid) + 2;
+  const stones = [];
+  for (let row = -1; row < rows; row++) {
+    for (let col = -1; col < cols; col++) {
+      const ox = (row & 1) ? grid / 2 : 0;
+      stones.push({
+        cx: col * grid + ox + (Math.random() - 0.5) * 28,
+        cy: row * grid + (Math.random() - 0.5) * 18,
+        size: grid * (0.62 + Math.random() * 0.38)
+      });
+    }
+  }
+
+  // Draw each stone as an irregular polygon with a darker mortar outline.
+  for (const s of stones) {
+    const nV = 6 + Math.floor(Math.random() * 3); // 6-8 vertices
+    const pts = [];
+    for (let i = 0; i < nV; i++) {
+      const a = (i / nV) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
+      const r = (s.size / 2) * (0.78 + Math.random() * 0.32);
+      pts.push([s.cx + Math.cos(a) * r, s.cy + Math.sin(a) * r]);
+    }
+    // Stone fill — earthy palette (warm gray to tan).
+    const h = 20 + Math.random() * 25;
+    const sat = 8 + Math.random() * 22;
+    const lit = 32 + Math.random() * 28;
+    ctx.fillStyle = `hsl(${h}, ${sat}%, ${lit}%)`;
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+    ctx.closePath();
+    ctx.fill();
+    // Highlight along one edge for chiselled look
+    ctx.strokeStyle = `hsla(${h}, ${sat}%, ${Math.min(85, lit + 22)}%, 0.55)`;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    ctx.lineTo(pts[1][0], pts[1][1]);
+    ctx.lineTo(pts[2][0], pts[2][1]);
+    ctx.stroke();
+    // Mortar outline
+    ctx.strokeStyle = 'rgba(32,28,24,0.55)';
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  // Fine grain noise
+  const imgData = ctx.getImageData(0, 0, W, H);
+  for (let i = 0; i < imgData.data.length; i += 4) {
+    const n = (Math.random() - 0.5) * 22;
+    imgData.data[i] = Math.max(0, Math.min(255, imgData.data[i] + n));
+    imgData.data[i+1] = Math.max(0, Math.min(255, imgData.data[i+1] + n));
+    imgData.data[i+2] = Math.max(0, Math.min(255, imgData.data[i+2] + n));
+  }
+  ctx.putImageData(imgData, 0, 0);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
 function shingleTexture() {
   const [c, ctx] = makeCanvas(512, 512);
   ctx.fillStyle = '#2C2C2C';
@@ -452,7 +527,7 @@ let sunLight;
 const groups = {};
 const dimGroups = {};
 const groupNames = ['furniture','foundation','pathways','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','kitchen','kitchenBricks','kitchenBackdrop','kitchenSlab','fence','ground','dims'];
-let woodMat, concreteMat, roofMat, mortarMat, acaciaMat, cushionMat, metalMat, wickerMat;
+let woodMat, concreteMat, roofMat, mortarMat, acaciaMat, cushionMat, metalMat, wickerMat, stoneMat, damagedStoneMat;
 let stainlessMat, stainlessDark, cabinetMat, counterMat, glassHobMat, hobMatteMat, hobBurnerMat, hobKnobMat,
     sinkNayaMat, sinkNayaBasin, sinkZiaMat, sinkZiaBasin, sinkEridanMat, sinkEridanBasin;
 let currentTab = 'pavilion';
@@ -499,6 +574,33 @@ function initScene() {
   const sTex = shingleTexture();
   roofMat = new THREE.MeshStandardMaterial({ map: sTex, roughness: 0.85 });
   mortarMat = new THREE.MeshStandardMaterial({ color: 0x999990, roughness: 0.95 });
+  const stTex = stoneTexture();
+  stoneMat = new THREE.MeshStandardMaterial({ map: stTex, roughness: 0.92, metalness: 0.0 });
+  // Damaged-wall stone — loaded asynchronously from a local seamless JPG (falls back to a public URL).
+  damagedStoneMat = new THREE.MeshStandardMaterial({ color: 0x8a8278, roughness: 0.92, metalness: 0.0 });
+  const damagedStoneURLs = [
+    encodeURI('58_damaged wall stone texture-seamless.jpg'),
+    'https://filebrowser.momchil.dev/api/public/dl/qMEa8tlq?inline=true'
+  ];
+  const loader = new THREE.TextureLoader();
+  loader.setCrossOrigin('anonymous');
+  let tryIdx = 0;
+  const loadNext = () => {
+    if (tryIdx >= damagedStoneURLs.length) return;
+    loader.load(
+      damagedStoneURLs[tryIdx++],
+      (tex) => {
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        damagedStoneMat.map = tex;
+        damagedStoneMat.color.set(0xffffff);
+        damagedStoneMat.needsUpdate = true;
+        if (Math.round(CONFIG.brickWall.material) === 2) scheduleRebuild();
+      },
+      undefined,
+      () => loadNext()
+    );
+  };
+  loadNext();
   const aTex = woodTexture();
   acaciaMat = new THREE.MeshStandardMaterial({ map: aTex, color: 0xC8A054, roughness: 0.70, metalness: 0.0 });
   cushionMat = new THREE.MeshStandardMaterial({ color: 0xF0E6D0, roughness: 0.95, metalness: 0.0 });
@@ -1440,6 +1542,39 @@ function buildBrickWall() {
   const longSpan = totalX * longSideCoverage;
   const shortSpan = totalZ * shortSideCoverage;
 
+  // STONE options: render the L-shaped wall as two textured slabs instead of brick instances.
+  //   material 1 = procedural stone texture
+  //   material 2 = damaged-wall photo texture (loaded from JPG)
+  const matIdx = Math.round(CONFIG.brickWall.material);
+  if (matIdx === 1 || matIdx === 2) {
+    const slabT = brickWidth;
+    const baseMat = (matIdx === 2) ? damagedStoneMat : stoneMat;
+    // Repeats per metre — tweak so a single tile reads at a sensible scale.
+    // The procedural texture has many small stones (denser repeat); the photo
+    // texture is a wider seamless tile, so use fewer repeats.
+    const xRepPerM = (matIdx === 2) ? 0.55 : 1.2;
+    const yRepPerM = (matIdx === 2) ? 0.55 : 1.2;
+    const makeMat = (spanW) => {
+      if (!baseMat.map) return baseMat; // texture not loaded yet — solid colour
+      const m = baseMat.clone();
+      m.map = baseMat.map.clone();
+      m.map.wrapS = m.map.wrapT = THREE.RepeatWrapping;
+      m.map.repeat.set(Math.max(1, spanW * xRepPerM), Math.max(1, wallHeight * yRepPerM));
+      m.map.needsUpdate = true;
+      return m;
+    };
+    if (longSideCoverage > 0) {
+      box(g, makeMat(longSpan), longSpan, wallHeight, slabT,
+          cornerX - longSpan/2, fndTop + wallHeight/2, cornerZ);
+    }
+    if (shortSideCoverage > 0) {
+      box(g, makeMat(shortSpan), slabT, wallHeight, shortSpan,
+          cornerX, fndTop + wallHeight/2, cornerZ - shortSpan/2);
+    }
+    updateStats(0, 0);
+    return;
+  }
+
   const stepL = brickLength + mortarGap;
   const stepH = brickHeight + mortarGap;
   const numCourses = Math.floor(wallHeight / stepH);
@@ -1596,14 +1731,14 @@ const DOOR_MODELS = [
   { w: 0.863, h: 0.482, label: '863×482 mm' }
 ];
 
-// Slot vertical placement:
-//   door (type 1)  — top flush with counter underside (existing behavior).
-//   trash (type 2) — bottom at 2 brick courses above foundation; top brick course fills the gap.
-//   drawer3 (type 3) — same 2-brick base; top brick course centered above.
+// Slot vertical placement: all non-open modules sit on a 2-brick-course base when
+// they fit under the counter (height + 2 courses ≤ counter underside). Modules that
+// would push past the counter (e.g., a tall 790×790 door under a low counter) fall
+// back to top-flush placement so they don't pop through the counter wood.
 function slotVerticalBounds(s, fndTop, counterUndersideY, stepH) {
-  if (s.type === 2 || s.type === 3) {
-    const moduleBottomY = fndTop + 2 * stepH;
-    return { moduleBottomY, moduleTopY: moduleBottomY + s.h };
+  const baseY = fndTop + 2 * stepH;
+  if (s.type !== 0 && baseY + s.h <= counterUndersideY + 0.001) {
+    return { moduleBottomY: baseY, moduleTopY: baseY + s.h };
   }
   const moduleTopY = counterUndersideY;
   return { moduleBottomY: moduleTopY - s.h, moduleTopY };
@@ -1704,10 +1839,12 @@ function buildKitchen() {
 
   if (courses > 0) {
     const divBricksPerCourse = Math.ceil(K.depth / stepL) + 2;
-    const kickBricksPerCourse = Math.ceil(0.79 / stepL) + 2;
+    const maxSlotW = Math.max(...moduleWidths, 0.79);
+    const kickBricksPerCourse = Math.ceil(maxSlotW / stepL) + 2;
+    // Capacity: dividers + grid bricks across full slot for every course + a top filler row.
     const maxBricks = (slotCount + 1) * courses * divBricksPerCourse
-                    + slotCount * courses * kickBricksPerCourse
-                    + slotCount * kickBricksPerCourse + 200;
+                    + slotCount * (courses + 1) * kickBricksPerCourse * 2
+                    + 200;
 
     const brickGeo = new THREE.BoxGeometry(1, 1, 1);
     const brickMatI = new THREE.MeshStandardMaterial({ roughness: 0.82 });
@@ -1750,28 +1887,33 @@ function buildKitchen() {
       }
     }
 
-    // KICKBOARDS — front-face brick under and above each non-open module.
-    // Drawer3 (type 3) and trash (type 2) modules sit on a 2-brick-course base
-    // (moduleBottomY = fndTop + 2*stepH), with a single brick course centered
-    // between the module top and the counter underside. Real-life build would
-    // need a steel lintel spanning the slot; the brick course above is visual only.
+    // FRONT BRICK WALL — fills the front of the kitchen with cutouts for each module.
+    // Below module: full slot width. In trim vertical: wings only (between slot edge
+    // and cutout edge). Above module: full slot width. A top filler course closes any
+    // remaining gap between the topmost grid brick and the counter underside.
     for (const s of slotInfo) {
       if (s.type === 0) continue;
       const { moduleBottomY, moduleTopY } = slotVerticalBounds(s, fndTop, counterUndersideY, stepH);
-      const kickAbsoluteH = moduleBottomY - fndTop;
-      const leftX = s.centerX + s.w / 2;
-      const rightX = s.centerX - s.w / 2;
-      const layCourse = (y, cidx) => {
+      const mod = modSize(s.type);
+      const cutoutBottomY = moduleBottomY + (mod.h - mod.cutH) / 2;
+      const cutoutTopY = moduleTopY - (mod.h - mod.cutH) / 2;
+      const cutoutLeftX = s.centerX + mod.cutW / 2;
+      const cutoutRightX = s.centerX - mod.cutW / 2;
+      const slotLeftX = s.centerX + s.w / 2;
+      const slotRightX = s.centerX - s.w / 2;
+
+      const layCourseInRange = (y, cidx, lBound, rBound, bH) => {
+        if (lBound - rBound < mortarGap) return;
         const off = (cidx % 2 === 1) ? stepL / 2 : 0;
-        let x = leftX - off;
-        while (x - brickLength / 2 > rightX - stepL) {
+        let x = lBound - off;
+        while (x - brickLength / 2 > rBound - stepL) {
           let bL = brickLength;
           let bx = x - brickLength / 2;
-          if (bx + bL > leftX) bL = leftX - bx;
-          if (bx < rightX) { bL -= (rightX - bx); bx = rightX; }
+          if (bx + bL > lBound) bL = lBound - bx;
+          if (bx < rBound) { bL -= (rBound - bx); bx = rBound; }
           if (bL < mortarGap) { x -= stepL; continue; }
           pos.set(bx + bL / 2, y, cabinetFrontZ + dividerThickness / 2);
-          scl.set(bL, brickHeight, dividerThickness);
+          scl.set(bL, bH, dividerThickness);
           mat4.compose(pos, quat, scl);
           mesh.setMatrixAt(idx, mat4);
           setColor();
@@ -1779,18 +1921,37 @@ function buildKitchen() {
           x -= stepL;
         }
       };
-      if (kickAbsoluteH >= stepH) {
-        const kickCourses = Math.floor(kickAbsoluteH / stepH);
-        for (let c = 0; c < kickCourses; c++) {
-          layCourse(fndTop + c * stepH + brickHeight / 2, c);
+
+      // Grid courses
+      for (let c = 0; c < courses; c++) {
+        const y = fndTop + c * stepH + brickHeight / 2;
+        const brickTop = y + brickHeight / 2;
+        const brickBot = y - brickHeight / 2;
+        if (brickTop <= moduleBottomY + 0.001) {
+          layCourseInRange(y, c, slotLeftX, slotRightX, brickHeight);
+        } else if (brickBot >= moduleTopY - 0.001) {
+          layCourseInRange(y, c, slotLeftX, slotRightX, brickHeight);
+        } else {
+          // Within trim vertical — lay wings only (brick on each side of the cutout).
+          layCourseInRange(y, c, slotLeftX, cutoutLeftX, brickHeight);
+          layCourseInRange(y, c, cutoutRightX, slotRightX, brickHeight);
         }
       }
-      // Top course above drawer3 and trash — single course centered in the gap.
-      const topGap = counterUndersideY - moduleTopY;
-      if (topGap > 0.001 && (s.type === 2 || s.type === 3)) {
-        const topCourseY = (moduleTopY + counterUndersideY) / 2;
-        const topCidx = Math.floor((moduleTopY - fndTop) / stepH);
-        layCourse(topCourseY, topCidx);
+
+      // Top filler — closes the gap between the topmost grid brick and the counter.
+      // Brick is centered vertically in the gap with its height capped at brickHeight.
+      const lastGridTop = fndTop + courses * stepH - mortarGap;
+      const fillerGap = counterUndersideY - lastGridTop;
+      if (fillerGap > 0.005) {
+        const fillerH = Math.min(brickHeight, Math.max(0.01, fillerGap - mortarGap));
+        const fillerY = lastGridTop + (counterUndersideY - lastGridTop) / 2;
+        if (fillerY > moduleTopY - 0.001) {
+          layCourseInRange(fillerY, courses, slotLeftX, slotRightX, fillerH);
+        } else {
+          // Filler row sits within trim vertical — wings only.
+          layCourseInRange(fillerY, courses, slotLeftX, cutoutLeftX, fillerH);
+          layCourseInRange(fillerY, courses, cutoutRightX, slotRightX, fillerH);
+        }
       }
     }
 
