@@ -91,19 +91,19 @@ const CONFIG = {
     height: 0.90,           // counter TOP above foundation top (m)
     counterThick: 0.04,
     counterOverhang: 0.03,
-    // 6 default slots: drawer3, drawer3, door (under sink), drawer3, trash, drawer3
+    // 6 default slots: door (under sink), trash, drawer3, drawer3 (under hob), drawer3, drawer3
     slotCount: 6,
-    slot1Type: 3,           // 0=open, 1=door, 2=trash, 3=drawer3
-    slot2Type: 3,
-    slot3Type: 1,
+    slot1Type: 1,           // 0=open, 1=door, 2=trash, 3=drawer3
+    slot2Type: 2,
+    slot3Type: 3,
     slot4Type: 3,
-    slot5Type: 2,
+    slot5Type: 3,
     slot6Type: 3,
     slot7Type: 0,
     slot8Type: 0,
     // appliances
     sinkModel: 1,           // 0=Naya 8, 1=Zia 8S, 2=Eridan
-    sinkSlot: 3,            // 1-indexed slot the sink sits above
+    sinkSlot: 1,            // 1-indexed slot the sink sits above
     hobModel: 1,            // 0=electric ceramic, 1=gas
     hobSlot: 4
   },
@@ -267,6 +267,9 @@ const GUI_SCHEMA = [
     {k:'kitchen.sinkSlot',  l:'Sink slot',    mn:1, mx:8, s:1},
     {k:'kitchen.hobModel',  l:'Hob (0/1)',    mn:0, mx:1, s:1},
     {k:'kitchen.hobSlot',   l:'Hob slot',     mn:1, mx:8, s:1}
+  ]},
+  { section:'Visibility', tab:'kitchen', open:true, controls:[
+    {k:'kitchenBricks', l:'Show bricks', type:'checkbox'}
   ]},
   { section:'Fence', tab:'pavilion', open:true, controls:[
     {k:'fence.height',         l:'Height (m)',     mn:0.5, mx:1.5, s:0.05},
@@ -440,7 +443,7 @@ let scene, camera, renderer;
 let sunLight;
 const groups = {};
 const dimGroups = {};
-const groupNames = ['furniture','foundation','pathways','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','kitchen','kitchenBackdrop','kitchenSlab','fence','ground','dims'];
+const groupNames = ['furniture','foundation','pathways','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','kitchen','kitchenBricks','kitchenBackdrop','kitchenSlab','fence','ground','dims'];
 let woodMat, concreteMat, roofMat, mortarMat, acaciaMat, cushionMat, metalMat, wickerMat;
 let stainlessMat, stainlessDark, counterMat, glassHobMat, hobMatteMat, hobBurnerMat, hobKnobMat,
     sinkNayaMat, sinkNayaBasin, sinkZiaMat, sinkZiaBasin, sinkEridanMat, sinkEridanBasin;
@@ -495,8 +498,8 @@ function initScene() {
   wickerMat = new THREE.MeshStandardMaterial({ color: 0xC4A56C, roughness: 0.90, metalness: 0.0 });
 
   // Kitchen materials
-  stainlessMat  = new THREE.MeshStandardMaterial({ color: 0xC8CCD0, metalness: 0.85, roughness: 0.30 });
-  stainlessDark = new THREE.MeshStandardMaterial({ color: 0x8A8E92, metalness: 0.80, roughness: 0.45 });
+  stainlessMat  = new THREE.MeshStandardMaterial({ color: 0xDDE1E6, metalness: 0.55, roughness: 0.38 });
+  stainlessDark = new THREE.MeshStandardMaterial({ color: 0x9CA0A4, metalness: 0.55, roughness: 0.48 });
   const wTexK = woodTexture();
   counterMat    = new THREE.MeshStandardMaterial({ map: wTexK, color: 0x8B5A2B, roughness: 0.55, metalness: 0.0 });
   glassHobMat   = new THREE.MeshStandardMaterial({ color: 0x0B0B0E, metalness: 0.10, roughness: 0.05 });
@@ -1561,9 +1564,31 @@ const KITCHEN_MOD = [
   { w: 0.46,  h: 0.59,  label: 'drawer3' }
 ];
 
+// Sink rim outer dimensions (m). Indexed by sinkModel.
+const SINK_RIMS = [
+  { w: 0.815, d: 0.500 }, // 0 = Blanco Naya 8
+  { w: 1.160, d: 0.500 }, // 1 = Blanco Zia 8S
+  { w: 0.880, d: 0.500 }  // 2 = Deante Eridan
+];
+
+// Slot vertical placement:
+//   door (type 1)  — top flush with counter underside (existing behavior).
+//   trash (type 2) — bottom at 2 brick courses above foundation; top brick course fills the gap.
+//   drawer3 (type 3) — same 2-brick base; top brick course centered above.
+function slotVerticalBounds(s, fndTop, counterUndersideY, stepH) {
+  if (s.type === 2 || s.type === 3) {
+    const moduleBottomY = fndTop + 2 * stepH;
+    return { moduleBottomY, moduleTopY: moduleBottomY + s.h };
+  }
+  const moduleTopY = counterUndersideY;
+  return { moduleBottomY: moduleTopY - s.h, moduleTopY };
+}
+
 function buildKitchen() {
   clearGroup('kitchen');
+  clearGroup('kitchenBricks');
   const g = groups.kitchen;
+  const gBricks = groups.kitchenBricks;
   const K = CONFIG.kitchen;
   const {brickLength, brickHeight, mortarGap} = CONFIG.brickWall;
   const wallBrickWidth = CONFIG.brickWall.brickWidth;
@@ -1580,6 +1605,19 @@ function buildKitchen() {
   // Open slots get a placeholder display width matching a drawer3 so they breathe visually
   const OPEN_W = 0.46;
   const moduleWidths = slotTypes.map(t => (t === 0 ? OPEN_W : KITCHEN_MOD[t].w));
+
+  // Sink and hob slots get widened so the appliance rim doesn't overlap the side dividers.
+  const sinkSlotIdx0 = Math.max(1, Math.min(slotCount, Math.round(K.sinkSlot))) - 1;
+  const hobSlotIdx0 = Math.max(1, Math.min(slotCount, Math.round(K.hobSlot))) - 1;
+  const sinkModelIdx = Math.max(0, Math.min(SINK_RIMS.length - 1, Math.round(K.sinkModel)));
+  const APPLIANCE_MARGIN = 0.04; // 20mm of slot beyond appliance edge on each side
+  const HOB_W = 0.59;
+  moduleWidths[sinkSlotIdx0] = Math.max(
+    moduleWidths[sinkSlotIdx0],
+    SINK_RIMS[sinkModelIdx].w + APPLIANCE_MARGIN
+  );
+  moduleWidths[hobSlotIdx0] = Math.max(moduleWidths[hobSlotIdx0], HOB_W + APPLIANCE_MARGIN);
+
   const totalModWidth = moduleWidths.reduce((a, b) => a + b, 0);
   const dividerThickness = 0.12; // single half-brick divider thickness
 
@@ -1632,7 +1670,8 @@ function buildKitchen() {
     const divBricksPerCourse = Math.ceil(K.depth / stepL) + 2;
     const kickBricksPerCourse = Math.ceil(0.79 / stepL) + 2;
     const maxBricks = (slotCount + 1) * courses * divBricksPerCourse
-                    + slotCount * courses * kickBricksPerCourse + 200;
+                    + slotCount * courses * kickBricksPerCourse
+                    + slotCount * kickBricksPerCourse + 200;
 
     const brickGeo = new THREE.BoxGeometry(1, 1, 1);
     const brickMatI = new THREE.MeshStandardMaterial({ roughness: 0.82 });
@@ -1675,18 +1714,19 @@ function buildKitchen() {
       }
     }
 
-    // KICKBOARDS — front-face brick under each non-open module
+    // KICKBOARDS — front-face brick under and above each non-open module.
+    // Drawer3 (type 3) and trash (type 2) modules sit on a 2-brick-course base
+    // (moduleBottomY = fndTop + 2*stepH), with a single brick course centered
+    // between the module top and the counter underside. Real-life build would
+    // need a steel lintel spanning the slot; the brick course above is visual only.
     for (const s of slotInfo) {
       if (s.type === 0) continue;
-      const moduleBottomY = counterUndersideY - s.h;
+      const { moduleBottomY, moduleTopY } = slotVerticalBounds(s, fndTop, counterUndersideY, stepH);
       const kickAbsoluteH = moduleBottomY - fndTop;
-      if (kickAbsoluteH < stepH) continue;
-      const kickCourses = Math.floor(kickAbsoluteH / stepH);
       const leftX = s.centerX + s.w / 2;
       const rightX = s.centerX - s.w / 2;
-      for (let c = 0; c < kickCourses; c++) {
-        const y = fndTop + c * stepH + brickHeight / 2;
-        const off = (c % 2 === 1) ? stepL / 2 : 0;
+      const layCourse = (y, cidx) => {
+        const off = (cidx % 2 === 1) ? stepL / 2 : 0;
         let x = leftX - off;
         while (x - brickLength / 2 > rightX - stepL) {
           let bL = brickLength;
@@ -1702,30 +1742,81 @@ function buildKitchen() {
           idx++;
           x -= stepL;
         }
+      };
+      if (kickAbsoluteH >= stepH) {
+        const kickCourses = Math.floor(kickAbsoluteH / stepH);
+        for (let c = 0; c < kickCourses; c++) {
+          layCourse(fndTop + c * stepH + brickHeight / 2, c);
+        }
+      }
+      // Top course above drawer3 and trash — single course centered in the gap.
+      const topGap = counterUndersideY - moduleTopY;
+      if (topGap > 0.001 && (s.type === 2 || s.type === 3)) {
+        const topCourseY = (moduleTopY + counterUndersideY) / 2;
+        const topCidx = Math.floor((moduleTopY - fndTop) / stepH);
+        layCourse(topCourseY, topCidx);
       }
     }
 
     mesh.count = idx;
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    g.add(mesh);
+    gBricks.add(mesh);
   }
 
   // ============== COUNTER ==============
+  // Tessellated around the sink rim cutout so the basin renders properly.
   const counterW = K.length + 2 * K.counterOverhang;
   const counterD = K.depth + K.counterOverhang;
   const counterCX = (kitchenStartX + kitchenEndX) / 2;
   const counterCZ = wallInteriorZ - counterD / 2;
-  box(g, counterMat, counterW, K.counterThick, counterD,
-      counterCX, counterUndersideY + K.counterThick / 2, counterCZ);
+  const counterY = counterUndersideY + K.counterThick / 2;
+  const counterXmin = counterCX - counterW / 2;
+  const counterXmax = counterCX + counterW / 2;
+  const counterZmin = wallInteriorZ - counterD;
+  const counterZmax = wallInteriorZ;
+
+  const sinkCutW = SINK_RIMS[sinkModelIdx].w;
+  const sinkCutD = Math.min(SINK_RIMS[sinkModelIdx].d, K.depth - 0.02);
+  const sinkCutCx = slotInfo[sinkSlotIdx0].centerX;
+  const sinkCutCz = wallInteriorZ - K.depth / 2;
+  const cutXmin = Math.max(sinkCutCx - sinkCutW / 2, counterXmin);
+  const cutXmax = Math.min(sinkCutCx + sinkCutW / 2, counterXmax);
+  const cutZmin = Math.max(sinkCutCz - sinkCutD / 2, counterZmin);
+  const cutZmax = Math.min(sinkCutCz + sinkCutD / 2, counterZmax);
+  const hasCutout = cutXmax - cutXmin > 0.001 && cutZmax - cutZmin > 0.001;
+
+  if (!hasCutout) {
+    box(g, counterMat, counterW, K.counterThick, counterD, counterCX, counterY, counterCZ);
+  } else {
+    // Left strip (full depth)
+    if (cutXmin - counterXmin > 0.001) {
+      box(g, counterMat, cutXmin - counterXmin, K.counterThick, counterD,
+          (counterXmin + cutXmin) / 2, counterY, counterCZ);
+    }
+    // Right strip (full depth)
+    if (counterXmax - cutXmax > 0.001) {
+      box(g, counterMat, counterXmax - cutXmax, K.counterThick, counterD,
+          (cutXmax + counterXmax) / 2, counterY, counterCZ);
+    }
+    // Front strip (between counter front and sink front)
+    if (cutZmin - counterZmin > 0.001) {
+      box(g, counterMat, cutXmax - cutXmin, K.counterThick, cutZmin - counterZmin,
+          (cutXmin + cutXmax) / 2, counterY, (counterZmin + cutZmin) / 2);
+    }
+    // Back strip (between sink back and counter back/wall interior)
+    if (counterZmax - cutZmax > 0.001) {
+      box(g, counterMat, cutXmax - cutXmin, K.counterThick, counterZmax - cutZmax,
+          (cutXmin + cutXmax) / 2, counterY, (cutZmax + counterZmax) / 2);
+    }
+  }
 
   // ============== MODULE FRONT FACES ==============
   // Face plate sits a hair in front of the brick front face (cabinetFrontZ)
   const faceZ = cabinetFrontZ - 0.006;
   for (const s of slotInfo) {
     if (s.type === 0) continue;
-    const moduleTopY = counterUndersideY;
-    const moduleBottomY = moduleTopY - s.h;
+    const { moduleBottomY, moduleTopY } = slotVerticalBounds(s, fndTop, counterUndersideY, stepH);
     const cy = (moduleTopY + moduleBottomY) / 2;
     if (s.type === 1) buildModDoor(g, s.centerX, cy, faceZ, s.w, s.h);
     else if (s.type === 2) buildModTrash(g, s.centerX, cy, faceZ, s.w, s.h);
@@ -1733,8 +1824,7 @@ function buildKitchen() {
   }
 
   // ============== SINK + HOB ==============
-  const sinkSlotIdx = Math.max(1, Math.min(slotCount, Math.round(K.sinkSlot))) - 1;
-  buildSink(g, Math.round(K.sinkModel), slotInfo[sinkSlotIdx].centerX, counterTopY, K.depth, wallInteriorZ);
+  buildSink(g, sinkModelIdx, slotInfo[sinkSlotIdx0].centerX, counterTopY, K.depth, wallInteriorZ);
 
   const hobSlotIdx = Math.max(1, Math.min(slotCount, Math.round(K.hobSlot))) - 1;
   buildHob(g, Math.round(K.hobModel), slotInfo[hobSlotIdx].centerX, counterTopY, K.depth, wallInteriorZ);
@@ -1754,7 +1844,7 @@ function buildKitchen() {
     const warn = layoutWarning ? ` | <span style="color:#ff8a4c">⚠ ${layoutWarning}</span>` : '';
     document.getElementById('stats').innerHTML =
       `Kitchen ${K.length.toFixed(2)}×${K.depth.toFixed(2)}m | ` +
-      `Sink: ${sinkNames[Math.round(K.sinkModel)] || '?'} (slot ${sinkSlotIdx + 1}) | ` +
+      `Sink: ${sinkNames[Math.round(K.sinkModel)] || '?'} (slot ${sinkSlotIdx0 + 1}) | ` +
       `Hob: ${hobNames[Math.round(K.hobModel)] || '?'} (slot ${hobSlotIdx + 1}) | ` +
       `Doors:${doorCount} Trash:${tCount} 3-Drawers:${dCount}${warn}`;
   }
@@ -1765,17 +1855,23 @@ function buildKitchen() {
 function buildModDoor(g, cx, cy, faceZ, w, h) {
   const frameT = 0.012;
   const inset  = 0.022;
-  // Outer frame (top/bottom/left/right strips), slightly raised
-  box(g, stainlessMat, w,      frameT, 0.012, cx, cy + h/2 - frameT/2, faceZ);
-  box(g, stainlessMat, w,      frameT, 0.012, cx, cy - h/2 + frameT/2, faceZ);
-  box(g, stainlessMat, frameT, h - 2*frameT, 0.012, cx + w/2 - frameT/2, cy, faceZ);
-  box(g, stainlessMat, frameT, h - 2*frameT, 0.012, cx - w/2 + frameT/2, cy, faceZ);
-  // Inner recessed panel (sits slightly behind the frame face)
-  box(g, stainlessMat, w - 2*inset, h - 2*inset, 0.008, cx, cy, faceZ + 0.004);
-  // Vertical handle near the left edge, upper portion
+  const seam   = 0.003;
+  const panelW = (w - seam) / 2;
   const handleH = Math.min(0.16, h * 0.25);
-  box(g, stainlessDark, 0.018, handleH, 0.028,
-      cx - w/2 + 0.05, cy + h/2 - 0.10 - handleH/2, faceZ - 0.018);
+  for (const side of [-1, 1]) {
+    const panelCx = cx + side * (panelW + seam) / 2;
+    // Outer frame (top/bottom/left/right strips), slightly raised
+    box(g, stainlessMat, panelW, frameT, 0.012, panelCx, cy + h/2 - frameT/2, faceZ);
+    box(g, stainlessMat, panelW, frameT, 0.012, panelCx, cy - h/2 + frameT/2, faceZ);
+    box(g, stainlessMat, frameT, h - 2*frameT, 0.012, panelCx + panelW/2 - frameT/2, cy, faceZ);
+    box(g, stainlessMat, frameT, h - 2*frameT, 0.012, panelCx - panelW/2 + frameT/2, cy, faceZ);
+    // Inner recessed panel (sits slightly behind the frame face)
+    box(g, stainlessMat, panelW - 2*inset, h - 2*inset, 0.008, panelCx, cy, faceZ + 0.004);
+    // Vertical handle near the center seam (inner edge of each door)
+    const handleX = panelCx - side * (panelW/2 - 0.05);
+    box(g, stainlessDark, 0.018, handleH, 0.028,
+        handleX, cy + h/2 - 0.10 - handleH/2, faceZ - 0.018);
+  }
 }
 
 function buildModTrash(g, cx, cy, faceZ, w, h) {
@@ -1807,24 +1903,26 @@ function buildModDrawer3(g, cx, cy, faceZ, w, h) {
 
 // ── Switchable sink models ──
 function buildSink(g, model, cx, counterTopY, kDepth, wallInteriorZ) {
-  let rimW, rimD, rimMat, bowlMat, bowls;
+  let rimW = SINK_RIMS[model].w;
+  let rimD = SINK_RIMS[model].d;
+  let rimMat, bowlMat, bowls;
   if (model === 0) {
     // Blanco Naya 8 — 815 × 500 mm, large + small bowls (composite)
-    rimW = 0.815; rimD = 0.500; rimMat = sinkNayaMat; bowlMat = sinkNayaBasin;
+    rimMat = sinkNayaMat; bowlMat = sinkNayaBasin;
     bowls = [
       { ox:  0.155, oz: 0, bw: 0.43,  bd: 0.44,  depth: 0.20 },
       { ox: -0.225, oz: 0, bw: 0.372, bd: 0.272, depth: 0.20 }
     ];
   } else if (model === 1) {
     // Blanco Zia 8S — 1160 × 500 mm, two symmetric bowls
-    rimW = 1.160; rimD = 0.500; rimMat = sinkZiaMat; bowlMat = sinkZiaBasin;
+    rimMat = sinkZiaMat; bowlMat = sinkZiaBasin;
     bowls = [
       { ox:  0.27, oz: 0, bw: 0.45, bd: 0.338, depth: 0.19 },
       { ox: -0.27, oz: 0, bw: 0.45, bd: 0.338, depth: 0.19 }
     ];
   } else {
     // Deante Eridan — 880 × 500 mm anthracite, large + small bowls
-    rimW = 0.880; rimD = 0.500; rimMat = sinkEridanMat; bowlMat = sinkEridanBasin;
+    rimMat = sinkEridanMat; bowlMat = sinkEridanBasin;
     bowls = [
       { ox: -0.16,  oz: 0, bw: 0.495, bd: 0.43, depth: 0.19 },
       { ox:  0.255, oz: 0, bw: 0.35,  bd: 0.26, depth: 0.19 }
@@ -1835,19 +1933,62 @@ function buildSink(g, model, cx, counterTopY, kDepth, wallInteriorZ) {
 
   const cz = wallInteriorZ - kDepth / 2;
   const rimY = counterTopY + 0.006;
-  // Rim plate (the visible flat composite surface)
-  box(g, rimMat, rimW, 0.012, rimD, cx, rimY, cz);
-  // Bowls (the inset wells) — modelled as solid blocks of basin color below the rim
+  const rimXmin = -rimW / 2, rimXmax = rimW / 2;
+  const rimZmin = -rimD / 2, rimZmax = rimD / 2;
+
+  // Rim plate — tessellated into strips around each bowl cutout
+  // 1. Full-depth X-strips between bowls (sorted by ox)
+  const sortedBowls = [...bowls].sort((a, b) => a.ox - b.ox);
+  let prevX = rimXmin;
+  for (const b of sortedBowls) {
+    const bxMin = Math.max(b.ox - b.bw / 2, rimXmin);
+    const stripW = bxMin - prevX;
+    if (stripW > 0.001) {
+      box(g, rimMat, stripW, 0.012, rimD, cx + (prevX + bxMin) / 2, rimY, cz);
+    }
+    prevX = Math.min(b.ox + b.bw / 2, rimXmax);
+  }
+  if (rimXmax - prevX > 0.001) {
+    box(g, rimMat, rimXmax - prevX, 0.012, rimD, cx + (prevX + rimXmax) / 2, rimY, cz);
+  }
+  // 2. Front/back strips per bowl (clipped to rim bounds)
+  for (const b of bowls) {
+    const bxMin = Math.max(b.ox - b.bw / 2, rimXmin);
+    const bxMax = Math.min(b.ox + b.bw / 2, rimXmax);
+    const bzMin = Math.max(b.oz - b.bd / 2, rimZmin);
+    const bzMax = Math.min(b.oz + b.bd / 2, rimZmax);
+    const clippedBw = bxMax - bxMin;
+    if (clippedBw < 0.001) continue;
+    const clippedCx = (bxMin + bxMax) / 2;
+    if (rimZmax - bzMax > 0.001) {
+      box(g, rimMat, clippedBw, 0.012, rimZmax - bzMax,
+          cx + clippedCx, rimY, cz + (bzMax + rimZmax) / 2);
+    }
+    if (bzMin - rimZmin > 0.001) {
+      box(g, rimMat, clippedBw, 0.012, bzMin - rimZmin,
+          cx + clippedCx, rimY, cz + (rimZmin + bzMin) / 2);
+    }
+  }
+
+  // Hollow wells — 4 side walls + floor per bowl
+  const wallT = 0.006, floorT = 0.006;
   for (const b of bowls) {
     const bx = cx + b.ox;
     const bz = cz + b.oz;
-    // Outer block matching bowl footprint, descending from rim down
-    box(g, bowlMat, b.bw, b.depth + 0.005, b.bd, bx, rimY - 0.006 - b.depth / 2, bz);
+    const wellTopY = rimY - 0.006;
+    const wellY = wellTopY - b.depth / 2;
+    box(g, bowlMat, b.bw, b.depth, wallT, bx, wellY, bz - b.bd / 2 + wallT / 2);
+    box(g, bowlMat, b.bw, b.depth, wallT, bx, wellY, bz + b.bd / 2 - wallT / 2);
+    box(g, bowlMat, wallT, b.depth, b.bd - 2 * wallT, bx - b.bw / 2 + wallT / 2, wellY, bz);
+    box(g, bowlMat, wallT, b.depth, b.bd - 2 * wallT, bx + b.bw / 2 - wallT / 2, wellY, bz);
+    box(g, bowlMat, b.bw - 2 * wallT, floorT, b.bd - 2 * wallT,
+        bx, wellTopY - b.depth + floorT / 2, bz);
   }
-  // Faucet (back-center of deck behind the larger bowl)
+
+  // Faucet — anchored on the back-deck strip behind the deepest-back bowl
+  const maxBowlZmax = Math.max(...bowls.map(b => b.oz + b.bd / 2));
   const faucetX = cx + (model === 2 ? -0.16 : (model === 0 ? 0.155 : 0));
-  const faucetZ = cz + rimD / 2 - 0.04;
-  // Vertical column
+  const faucetZ = cz + (maxBowlZmax + rimZmax) / 2;
   const colH = 0.28;
   box(g, stainlessMat, 0.025, colH, 0.025, faucetX, rimY + colH / 2, faucetZ);
   // Horizontal spout reaching toward the bowl
