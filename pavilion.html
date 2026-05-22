@@ -19,6 +19,12 @@ canvas{display:block}
   display:flex;align-items:center;justify-content:center;font-size:16px;transition:right .3s}
 #toggle.collapsed{right:42px}
 .gt{font-size:15px;font-weight:700;margin-bottom:14px;color:#fff;letter-spacing:1.5px;text-transform:uppercase}
+.tabs{display:flex;gap:4px;margin-bottom:14px}
+.tab{flex:1;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:5px;
+  color:#888;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;
+  padding:8px 0;cursor:pointer;transition:background .15s,color .15s,border-color .15s}
+.tab:hover{background:rgba(255,255,255,0.07);color:#bbb}
+.tab.active{background:rgba(74,158,255,0.15);border-color:rgba(74,158,255,0.5);color:#4a9eff}
 .gs{margin-bottom:8px;border:1px solid rgba(255,255,255,0.06);border-radius:6px;overflow:hidden}
 .gh{background:rgba(255,255,255,0.04);padding:8px 10px;cursor:pointer;display:flex;
   justify-content:space-between;align-items:center;font-weight:600;font-size:11px;
@@ -51,6 +57,10 @@ canvas{display:block}
 <button id="toggle" onclick="toggleGUI()">☰</button>
 <div id="gui">
   <div class="gt">Pavilion Builder</div>
+  <div class="tabs">
+    <button class="tab active" id="tab_pavilion" onclick="switchTab('pavilion')">Pavilion</button>
+    <button class="tab" id="tab_kitchen" onclick="switchTab('kitchen')">Kitchen</button>
+  </div>
   <div id="gui-sections"></div>
 </div>
 
@@ -76,16 +86,26 @@ const CONFIG = {
     postMinDist: 0.60
   },
   kitchen: {
-    length: 3.8,           // total run along back wall (m)
-    sections: 5,           // number of cabinet bays
-    height: 0.85,          // brick height from foundation top (m)
-    depth: 0.60,           // depth from wall interior face inward (m)
-    kickHeight: 0.17,      // front kickboard height (m)
-    brickWidth: 0.120,     // kitchen brick width (m)
-    counterThick: 0.04,    // wooden counter slab thickness
-    counterOverhang: 0.03, // counter overhang past bricks (front + sides)
-    sinkSection: 0,        // section index for sink (-1 = none)
-    hobSection: 2          // section index for hobs (-1 = none)
+    length: 4.0,            // total run length (m)
+    depth: 0.65,            // depth from back wall interior inward (m)
+    height: 0.90,           // counter TOP above foundation top (m)
+    counterThick: 0.04,
+    counterOverhang: 0.03,
+    // 6 default slots: drawer3, drawer3, door (under sink), drawer3, trash, drawer3
+    slotCount: 6,
+    slot1Type: 3,           // 0=open, 1=door, 2=trash, 3=drawer3
+    slot2Type: 3,
+    slot3Type: 1,
+    slot4Type: 3,
+    slot5Type: 2,
+    slot6Type: 3,
+    slot7Type: 0,
+    slot8Type: 0,
+    // appliances
+    sinkModel: 1,           // 0=Naya 8, 1=Zia 8S, 2=Eridan
+    sinkSlot: 3,            // 1-indexed slot the sink sits above
+    hobModel: 1,            // 0=electric ceramic, 1=gas
+    hobSlot: 4
   },
   fence: {
     height: 1.0,
@@ -170,19 +190,19 @@ const CONFIG = {
 // GUI SCHEMA — defines the control panel layout
 // ═══════════════════════════════════════════════════════════════
 const GUI_SCHEMA = [
-  { section:'Foundation', open:false, controls:[
+  { section:'Foundation', tab:'pavilion', open:false, controls:[
     {k:'foundation.length',    l:'Length (m)',    mn:3,   mx:12,  s:0.1},
     {k:'foundation.width',     l:'Width (m)',     mn:2,   mx:8,   s:0.1},
     {k:'foundation.thickness', l:'Thickness (m)', mn:0.05,mx:0.3, s:0.01},
     {k:'foundation.extension', l:'Extension (m)', mn:0.0, mx:0.7, s:0.01}
   ]},
-  { section:'Pathways', open:false, controls:[
+  { section:'Pathways', tab:'pavilion', open:false, controls:[
     {k:'pathways.frontLength', l:'Front length (m)', mn:0,    mx:5.0, s:0.1},
     {k:'pathways.leftLength',  l:'Left length (m)',  mn:0,    mx:5.0, s:0.1},
     {k:'pathways.width',       l:'Width (m)',        mn:0.3,  mx:4.0, s:0.1},
     {k:'pathways.thickness',   l:'Thickness (m)',    mn:0.02, mx:0.20,s:0.01}
   ]},
-  { section:'Posts', open:true, controls:[
+  { section:'Posts', tab:'pavilion', open:true, controls:[
     {k:'posts.size',           l:'Size (m)',           mn:0.08,mx:0.25,s:0.01},
     {k:'posts.gridCols',       l:'Columns',            mn:2,   mx:6,   s:1},
     {k:'posts.gridRows',       l:'Rows',               mn:2,   mx:4,   s:1},
@@ -191,30 +211,30 @@ const GUI_SCHEMA = [
     {k:'posts.innerRowInset',  l:'Inner Row Inset (m)',  mn:0,   mx:1.0, s:0.01},
     {k:'posts.innerRowOffset', l:'Inner Row Offset (m)', mn:-1.0,mx:1.0, s:0.01}
   ]},
-  { section:'Beams', open:false, controls:[
+  { section:'Beams', tab:'pavilion', open:false, controls:[
     {k:'beams.width',    l:'Width (m)',     mn:0.05,mx:0.25,s:0.01},
     {k:'beams.height',   l:'Height (m)',    mn:0.10,mx:0.30,s:0.01},
     {k:'beams.overhang', l:'Overhang (m)',  mn:0.0, mx:1.5, s:0.05},
     {k:'beams.crossSpacing', l:'Cross Spacing (m)', mn:0.5, mx:3.0, s:0.05}
   ]},
-  { section:'Ridge', open:false, controls:[
+  { section:'Ridge', tab:'pavilion', open:false, controls:[
     {k:'ridge.size',          l:'Size (m)',       mn:0.08,mx:0.25,s:0.01},
     {k:'ridge.supportHeight', l:'Support H (m)',  mn:0.5, mx:2.5, s:0.05},
     {k:'ridge.overhang',      l:'Overhang (m)',   mn:0.0, mx:1.5, s:0.05}
   ]},
-  { section:'Rafters', open:false, controls:[
+  { section:'Rafters', tab:'pavilion', open:false, controls:[
     {k:'rafters.width',    l:'Width (m)',     mn:0.03,mx:0.10,s:0.005},
     {k:'rafters.height',   l:'Height (m)',    mn:0.05,mx:0.25,s:0.01},
     {k:'rafters.spacing',  l:'Spacing (m)',   mn:0.30,mx:1.20,s:0.05},
     {k:'rafters.overhang', l:'Overhang (m)',  mn:0.0, mx:0.80,s:0.05}
   ]},
-  { section:'Panelling', open:false, controls:[
+  { section:'Panelling', tab:'pavilion', open:false, controls:[
     {k:'panelling.plankWidth',     l:'Plank W (m)',   mn:0.06, mx:0.20, s:0.005},
     {k:'panelling.plankThickness', l:'Thickness (m)', mn:0.008,mx:0.025,s:0.001},
     {k:'panelling.gap',            l:'Gap (m)',       mn:0.0,  mx:0.010,s:0.001},
     {k:'panelling.depthOffset',    l:'Depth ofs (m)', mn:0.0,  mx:0.010,s:0.001}
   ]},
-  { section:'Brick Wall', open:false, controls:[
+  { section:'Brick Wall', tab:'pavilion', open:false, controls:[
     {k:'brickWall.brickLength',      l:'Brick L (m)',   mn:0.15,mx:0.35,s:0.005},
     {k:'brickWall.brickWidth',       l:'Brick W (m)',   mn:0.06,mx:0.50,s:0.005},
     {k:'brickWall.brickHeight',      l:'Brick H (m)',   mn:0.04,mx:0.10,s:0.005},
@@ -224,24 +244,38 @@ const GUI_SCHEMA = [
     {k:'brickWall.shortSideCoverage',l:'Short side %',  mn:0.0, mx:1.0, s:0.05},
     {k:'brickWall.postMinDist',      l:'Post Min Dist (m)', mn:0.0, mx:1.0, s:0.01}
   ]},
-  { section:'Kitchen', open:false, controls:[
-    {k:'kitchen.length',     l:'Length (m)',     mn:0.5, mx:6.0, s:0.1},
-    {k:'kitchen.sections',   l:'Sections',       mn:1,   mx:8,   s:1},
-    {k:'kitchen.height',     l:'Height (m)',     mn:0.5, mx:1.2, s:0.05},
-    {k:'kitchen.depth',      l:'Depth (m)',      mn:0.3, mx:1.0, s:0.05},
-    {k:'kitchen.kickHeight', l:'Kick H (m)',     mn:0.0, mx:0.25,s:0.01},
-    {k:'kitchen.brickWidth', l:'Brick W (m)',    mn:0.06,mx:0.50,s:0.005},
-    {k:'kitchen.sinkSection', l:'Sink section', mn:-1, mx:7, s:1},
-    {k:'kitchen.hobSection',  l:'Hob section',  mn:-1, mx:7, s:1}
+  { section:'Kitchen Dimensions', tab:'kitchen', open:true, controls:[
+    {k:'kitchen.length',          l:'Length (m)',     mn:1.0,  mx:6.0, s:0.05},
+    {k:'kitchen.depth',           l:'Depth (m)',      mn:0.50, mx:0.85,s:0.01},
+    {k:'kitchen.height',          l:'Counter H (m)',  mn:0.75, mx:1.05,s:0.01},
+    {k:'kitchen.counterThick',    l:'Counter T (m)',  mn:0.02, mx:0.08,s:0.005},
+    {k:'kitchen.counterOverhang', l:'Overhang (m)',   mn:0.0,  mx:0.08,s:0.005}
   ]},
-  { section:'Fence', open:true, controls:[
+  { section:'Slots (0=open 1=door 2=trash 3=drawers)', tab:'kitchen', open:true, controls:[
+    {k:'kitchen.slotCount', l:'Slot count', mn:1, mx:8, s:1},
+    {k:'kitchen.slot1Type', l:'Slot 1',     mn:0, mx:3, s:1},
+    {k:'kitchen.slot2Type', l:'Slot 2',     mn:0, mx:3, s:1},
+    {k:'kitchen.slot3Type', l:'Slot 3',     mn:0, mx:3, s:1},
+    {k:'kitchen.slot4Type', l:'Slot 4',     mn:0, mx:3, s:1},
+    {k:'kitchen.slot5Type', l:'Slot 5',     mn:0, mx:3, s:1},
+    {k:'kitchen.slot6Type', l:'Slot 6',     mn:0, mx:3, s:1},
+    {k:'kitchen.slot7Type', l:'Slot 7',     mn:0, mx:3, s:1},
+    {k:'kitchen.slot8Type', l:'Slot 8',     mn:0, mx:3, s:1}
+  ]},
+  { section:'Appliances', tab:'kitchen', open:true, controls:[
+    {k:'kitchen.sinkModel', l:'Sink (0/1/2)', mn:0, mx:2, s:1},
+    {k:'kitchen.sinkSlot',  l:'Sink slot',    mn:1, mx:8, s:1},
+    {k:'kitchen.hobModel',  l:'Hob (0/1)',    mn:0, mx:1, s:1},
+    {k:'kitchen.hobSlot',   l:'Hob slot',     mn:1, mx:8, s:1}
+  ]},
+  { section:'Fence', tab:'pavilion', open:true, controls:[
     {k:'fence.height',         l:'Height (m)',     mn:0.5, mx:1.5, s:0.05},
     {k:'fence.picketWidth',    l:'Picket W (m)',   mn:0.03,mx:0.12,s:0.005},
     {k:'fence.picketGap',      l:'Picket gap (m)', mn:0.02,mx:0.12,s:0.005},
     {k:'fence.frontOpening',   l:'Front opening',  mn:0,   mx:4,   s:1},
     {k:'fence.leftOpening',    l:'Left opening',   mn:0,   mx:4,   s:1}
   ]},
-  { section:'Sofa', open:false, controls:[
+  { section:'Sofa', tab:'pavilion', open:false, controls:[
     {k:'furniture.show',             l:'Show (0/1)',          mn:0,   mx:1,   s:1},
     {k:'furniture.sofaType',         l:'Model (1=L, 2=chaise)',mn:1,  mx:2,   s:1},
     {k:'furniture.sofaArmLength',    l:'L: Arm length (m)',   mn:1.0, mx:4.0, s:0.1},
@@ -258,7 +292,7 @@ const GUI_SCHEMA = [
     {k:'furniture.sofaCornerOffsetZ',l:'Corner ofs Z (m)',    mn:0.0, mx:1.0, s:0.05},
     {k:'furniture.coffeTableOffset', l:'Table gap (m)',       mn:0.0, mx:0.60,s:0.05}
   ]},
-  { section:'Lounge Chair', open:false, controls:[
+  { section:'Lounge Chair', tab:'pavilion', open:false, controls:[
     {k:'furniture.loungeShow',            l:'Show (0/1)',         mn:0,    mx:1,    s:1},
     {k:'furniture.loungeWidth',           l:'Width (m)',          mn:0.50, mx:1.00, s:0.02},
     {k:'furniture.loungeDepth',           l:'Depth (m)',          mn:0.55, mx:1.00, s:0.02},
@@ -272,7 +306,7 @@ const GUI_SCHEMA = [
     {k:'furniture.loungeOffsetX',         l:'Offset X (m)',       mn:-1.0, mx:1.5,  s:0.05},
     {k:'furniture.loungeAngle',           l:'Angle (deg)',        mn:-45,  mx:45,   s:1}
   ]},
-  { section:'Dining Table', open:false, controls:[
+  { section:'Dining Table', tab:'pavilion', open:false, controls:[
     {k:'furniture.tableLength',        l:'Table L (m)',      mn:1.0, mx:3.0, s:0.05},
     {k:'furniture.tableWidth',         l:'Table W (m)',      mn:0.5, mx:1.5, s:0.05},
     {k:'furniture.tableHeight',        l:'Table H (m)',      mn:0.50,mx:1.0, s:0.01},
@@ -281,19 +315,19 @@ const GUI_SCHEMA = [
     {k:'furniture.diningCornerOffsetX',l:'Corner ofs X (m)', mn:0.0, mx:1.0, s:0.05},
     {k:'furniture.diningCornerOffsetZ',l:'Corner ofs Z (m)', mn:0.0, mx:1.5, s:0.05}
   ]},
-  { section:'Sun Position', open:true, controls:[
+  { section:'Sun Position', tab:'pavilion', open:true, controls:[
     {k:'sun.month',       l:'Month (1-12)',     mn:1,   mx:12,  s:1},
     {k:'sun.hour',        l:'Hour (0-24)',      mn:4,   mx:21,  s:0.25},
     {k:'sun.latitude',    l:'Latitude (°N)',    mn:20,  mx:65,  s:0.5},
     {k:'sun.orientation', l:'Orientation (°)',   mn:0,   mx:360, s:5}
   ]},
-  { section:'Dimensions', open:true, controls:[
+  { section:'Dimensions', tab:'pavilion', open:true, controls:[
     {k:'dims',            l:'Show All',    type:'checkbox'},
     {k:'dims_foundation', l:'Foundation',  type:'checkbox'},
     {k:'dims_posts',      l:'Posts',       type:'checkbox'},
     {k:'dims_brickWall',  l:'Brick Wall',  type:'checkbox'}
   ]},
-  { section:'Visibility', open:false, controls:[
+  { section:'Visibility', tab:'pavilion', open:false, controls:[
     {k:'ground',     l:'Ground',      type:'checkbox'},
     {k:'foundation', l:'Foundation',  type:'checkbox'},
     {k:'posts',      l:'Posts',       type:'checkbox'},
@@ -406,8 +440,11 @@ let scene, camera, renderer;
 let sunLight;
 const groups = {};
 const dimGroups = {};
-const groupNames = ['furniture','foundation','pathways','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','kitchen','fence','ground','dims'];
+const groupNames = ['furniture','foundation','pathways','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','kitchen','kitchenBackdrop','kitchenSlab','fence','ground','dims'];
 let woodMat, concreteMat, roofMat, mortarMat, acaciaMat, cushionMat, metalMat, wickerMat;
+let stainlessMat, stainlessDark, counterMat, glassHobMat, hobMatteMat, hobBurnerMat, hobKnobMat,
+    sinkNayaMat, sinkNayaBasin, sinkZiaMat, sinkZiaBasin, sinkEridanMat, sinkEridanBasin;
+let currentTab = 'pavilion';
 
 function initScene() {
   scene = new THREE.Scene();
@@ -456,6 +493,22 @@ function initScene() {
   cushionMat = new THREE.MeshStandardMaterial({ color: 0xF0E6D0, roughness: 0.95, metalness: 0.0 });
   metalMat = new THREE.MeshStandardMaterial({ color: 0x2A2A2A, roughness: 0.45, metalness: 0.7 });
   wickerMat = new THREE.MeshStandardMaterial({ color: 0xC4A56C, roughness: 0.90, metalness: 0.0 });
+
+  // Kitchen materials
+  stainlessMat  = new THREE.MeshStandardMaterial({ color: 0xC8CCD0, metalness: 0.85, roughness: 0.30 });
+  stainlessDark = new THREE.MeshStandardMaterial({ color: 0x8A8E92, metalness: 0.80, roughness: 0.45 });
+  const wTexK = woodTexture();
+  counterMat    = new THREE.MeshStandardMaterial({ map: wTexK, color: 0x8B5A2B, roughness: 0.55, metalness: 0.0 });
+  glassHobMat   = new THREE.MeshStandardMaterial({ color: 0x0B0B0E, metalness: 0.10, roughness: 0.05 });
+  hobMatteMat   = new THREE.MeshStandardMaterial({ color: 0x202024, metalness: 0.15, roughness: 0.55 });
+  hobBurnerMat  = new THREE.MeshStandardMaterial({ color: 0x1A1A1A, metalness: 0.30, roughness: 0.60 });
+  hobKnobMat    = new THREE.MeshStandardMaterial({ color: 0xBFC2C6, metalness: 0.70, roughness: 0.35 });
+  sinkNayaMat    = new THREE.MeshStandardMaterial({ color: 0xE8E2D5, metalness: 0.05, roughness: 0.55 });
+  sinkNayaBasin  = new THREE.MeshStandardMaterial({ color: 0xC9C2B1, metalness: 0.05, roughness: 0.65 });
+  sinkZiaMat     = new THREE.MeshStandardMaterial({ color: 0xCFCFC8, metalness: 0.05, roughness: 0.55 });
+  sinkZiaBasin   = new THREE.MeshStandardMaterial({ color: 0xA8A89F, metalness: 0.05, roughness: 0.65 });
+  sinkEridanMat  = new THREE.MeshStandardMaterial({ color: 0x3A3C40, metalness: 0.35, roughness: 0.55 });
+  sinkEridanBasin= new THREE.MeshStandardMaterial({ color: 0x222428, metalness: 0.30, roughness: 0.60 });
 
   // Groups
   groupNames.forEach(n => { groups[n] = new THREE.Group(); scene.add(groups[n]); });
@@ -1499,39 +1552,424 @@ function updateStats(brickCount, courses) {
 // ═══════════════════════════════════════════════════════════════
 // KITCHEN
 // ═══════════════════════════════════════════════════════════════
+// Module geometry table — physical dimensions of each VEVOR built-in (m)
+//   type 0=open, 1=door, 2=trash, 3=drawer3
+const KITCHEN_MOD = [
+  { w: 0,     h: 0,     label: 'open' },
+  { w: 0.79,  h: 0.79,  label: 'door' },
+  { w: 0.344, h: 0.655, label: 'trash' },
+  { w: 0.46,  h: 0.59,  label: 'drawer3' }
+];
+
 function buildKitchen() {
   clearGroup('kitchen');
   const g = groups.kitchen;
-  const {length, sections, height, depth, kickHeight, counterThick, counterOverhang} = CONFIG.kitchen;
+  const K = CONFIG.kitchen;
   const {brickLength, brickHeight, mortarGap} = CONFIG.brickWall;
   const wallBrickWidth = CONFIG.brickWall.brickWidth;
-  const brickWidth = CONFIG.kitchen.brickWidth;
-
-  const stepL = brickLength + mortarGap;
-  const stepH = brickHeight + mortarGap;
-  const dividerCourses = Math.floor(height / stepH);
-
-  if (sections < 1 || length <= 0 || height < stepH) return;
-
-  const {totalX, totalZ} = getPostGridDimensions();
   const fndTop = CONFIG.foundation.thickness;
 
-  // Position relative to back wall interior face
+  if (K.length <= 0 || K.depth <= 0 || K.height < 0.3) return;
+
+  // Slot configuration
+  const slotCount = Math.max(1, Math.min(8, Math.round(K.slotCount)));
+  const slotTypes = [];
+  for (let i = 1; i <= slotCount; i++) {
+    slotTypes.push(Math.max(0, Math.min(3, Math.round(K['slot' + i + 'Type']))));
+  }
+  // Open slots get a placeholder display width matching a drawer3 so they breathe visually
+  const OPEN_W = 0.46;
+  const moduleWidths = slotTypes.map(t => (t === 0 ? OPEN_W : KITCHEN_MOD[t].w));
+  const totalModWidth = moduleWidths.reduce((a, b) => a + b, 0);
+  const dividerThickness = 0.12; // single half-brick divider thickness
+
+  let dividerWidth = (K.length - totalModWidth) / (slotCount + 1);
+  let layoutWarning = '';
+  if (dividerWidth < 0.03) {
+    layoutWarning = `Doesn't fit (needs ≥ ${(totalModWidth + (slotCount + 1) * 0.03).toFixed(2)}m)`;
+    dividerWidth = 0.03;
+  }
+
+  // Anchor: back-right corner of pavilion, kitchen runs in -X direction
+  const {totalX, totalZ} = getPostGridDimensions();
   const cornerX = totalX / 2;
   const cornerZ = totalZ / 2;
   const wallInteriorZ = cornerZ - wallBrickWidth / 2;
-  const kitchenStartX = cornerX - wallBrickWidth / 2; // flush with short wall interior
-  const kitchenEndX = kitchenStartX - length;
-  const sectionWidth = length / sections;
-  const cabinetFrontZ = wallInteriorZ - depth;
+  const kitchenStartX = cornerX - wallBrickWidth / 2;
+  const kitchenEndX = kitchenStartX - K.length;
+  const cabinetFrontZ = wallInteriorZ - K.depth;
 
-  // Estimate max bricks
-  const divBricksPerCourse = Math.ceil(depth / stepL) + 2;
-  const kickBricksPerCourse = Math.ceil(sectionWidth / stepL) + 2;
-  const kickCourses = Math.floor(kickHeight / stepH);
-  const maxBricks = (sections + 1) * dividerCourses * divBricksPerCourse
-                  + sections * kickCourses * kickBricksPerCourse + 100;
+  const counterTopY = fndTop + K.height;
+  const counterUndersideY = counterTopY - K.counterThick;
 
+  // Layout walk: divider, slot, divider, slot, ..., divider
+  const slotInfo = []; // {idx, centerX, w, type, h}
+  const dividerInfo = []; // {centerX, w}
+  let cursorX = kitchenStartX;
+  for (let i = 0; i < slotCount; i++) {
+    dividerInfo.push({ centerX: cursorX - dividerWidth / 2, w: dividerWidth });
+    cursorX -= dividerWidth;
+    const w = moduleWidths[i];
+    const type = slotTypes[i];
+    slotInfo.push({
+      idx: i + 1,
+      centerX: cursorX - w / 2,
+      w,
+      type,
+      h: (type === 0 ? 0 : KITCHEN_MOD[type].h)
+    });
+    cursorX -= w;
+  }
+  dividerInfo.push({ centerX: cursorX - dividerWidth / 2, w: dividerWidth });
+
+  // ============== BRICK BASE ==============
+  const stepL = brickLength + mortarGap;
+  const stepH = brickHeight + mortarGap;
+  const baseHeight = counterUndersideY - fndTop;
+  const courses = Math.max(0, Math.floor(baseHeight / stepH));
+
+  if (courses > 0) {
+    const divBricksPerCourse = Math.ceil(K.depth / stepL) + 2;
+    const kickBricksPerCourse = Math.ceil(0.79 / stepL) + 2;
+    const maxBricks = (slotCount + 1) * courses * divBricksPerCourse
+                    + slotCount * courses * kickBricksPerCourse + 200;
+
+    const brickGeo = new THREE.BoxGeometry(1, 1, 1);
+    const brickMatI = new THREE.MeshStandardMaterial({ roughness: 0.82 });
+    const mesh = new THREE.InstancedMesh(brickGeo, brickMatI, maxBricks);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+
+    const mat4 = new THREE.Matrix4();
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion();
+    const scl = new THREE.Vector3();
+    const color = new THREE.Color();
+    let idx = 0;
+
+    function setColor() {
+      color.setHSL(0.055 + Math.random()*0.025, 0.65 + Math.random()*0.15, 0.32 + Math.random()*0.1);
+      mesh.setColorAt(idx, color);
+    }
+
+    // DIVIDERS — vertical brick walls between slots and at both ends
+    for (const d of dividerInfo) {
+      for (let c = 0; c < courses; c++) {
+        const y = fndTop + c * stepH + brickHeight / 2;
+        const off = (c % 2 === 1) ? stepL / 2 : 0;
+        let z = wallInteriorZ - off;
+        while (z - brickLength / 2 > cabinetFrontZ - stepL) {
+          let bL = brickLength;
+          let bz = z - brickLength / 2;
+          if (bz + bL > wallInteriorZ) bL = wallInteriorZ - bz;
+          if (bz < cabinetFrontZ) { bL -= (cabinetFrontZ - bz); bz = cabinetFrontZ; }
+          if (bL < mortarGap) { z -= stepL; continue; }
+          pos.set(d.centerX, y, bz + bL / 2);
+          scl.set(d.w, brickHeight, bL);
+          mat4.compose(pos, quat, scl);
+          mesh.setMatrixAt(idx, mat4);
+          setColor();
+          idx++;
+          z -= stepL;
+        }
+      }
+    }
+
+    // KICKBOARDS — front-face brick under each non-open module
+    for (const s of slotInfo) {
+      if (s.type === 0) continue;
+      const moduleBottomY = counterUndersideY - s.h;
+      const kickAbsoluteH = moduleBottomY - fndTop;
+      if (kickAbsoluteH < stepH) continue;
+      const kickCourses = Math.floor(kickAbsoluteH / stepH);
+      const leftX = s.centerX + s.w / 2;
+      const rightX = s.centerX - s.w / 2;
+      for (let c = 0; c < kickCourses; c++) {
+        const y = fndTop + c * stepH + brickHeight / 2;
+        const off = (c % 2 === 1) ? stepL / 2 : 0;
+        let x = leftX - off;
+        while (x - brickLength / 2 > rightX - stepL) {
+          let bL = brickLength;
+          let bx = x - brickLength / 2;
+          if (bx + bL > leftX) bL = leftX - bx;
+          if (bx < rightX) { bL -= (rightX - bx); bx = rightX; }
+          if (bL < mortarGap) { x -= stepL; continue; }
+          pos.set(bx + bL / 2, y, cabinetFrontZ + dividerThickness / 2);
+          scl.set(bL, brickHeight, dividerThickness);
+          mat4.compose(pos, quat, scl);
+          mesh.setMatrixAt(idx, mat4);
+          setColor();
+          idx++;
+          x -= stepL;
+        }
+      }
+    }
+
+    mesh.count = idx;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    g.add(mesh);
+  }
+
+  // ============== COUNTER ==============
+  const counterW = K.length + 2 * K.counterOverhang;
+  const counterD = K.depth + K.counterOverhang;
+  const counterCX = (kitchenStartX + kitchenEndX) / 2;
+  const counterCZ = wallInteriorZ - counterD / 2;
+  box(g, counterMat, counterW, K.counterThick, counterD,
+      counterCX, counterUndersideY + K.counterThick / 2, counterCZ);
+
+  // ============== MODULE FRONT FACES ==============
+  // Face plate sits a hair in front of the brick front face (cabinetFrontZ)
+  const faceZ = cabinetFrontZ - 0.006;
+  for (const s of slotInfo) {
+    if (s.type === 0) continue;
+    const moduleTopY = counterUndersideY;
+    const moduleBottomY = moduleTopY - s.h;
+    const cy = (moduleTopY + moduleBottomY) / 2;
+    if (s.type === 1) buildModDoor(g, s.centerX, cy, faceZ, s.w, s.h);
+    else if (s.type === 2) buildModTrash(g, s.centerX, cy, faceZ, s.w, s.h);
+    else if (s.type === 3) buildModDrawer3(g, s.centerX, cy, faceZ, s.w, s.h);
+  }
+
+  // ============== SINK + HOB ==============
+  const sinkSlotIdx = Math.max(1, Math.min(slotCount, Math.round(K.sinkSlot))) - 1;
+  buildSink(g, Math.round(K.sinkModel), slotInfo[sinkSlotIdx].centerX, counterTopY, K.depth, wallInteriorZ);
+
+  const hobSlotIdx = Math.max(1, Math.min(slotCount, Math.round(K.hobSlot))) - 1;
+  buildHob(g, Math.round(K.hobModel), slotInfo[hobSlotIdx].centerX, counterTopY, K.depth, wallInteriorZ);
+
+  // ============== LIGHT ==============
+  const kitchenLight = new THREE.PointLight(0xFFF0DD, 0.5, 4);
+  kitchenLight.position.set(counterCX, counterTopY + 0.6, wallInteriorZ - 0.05);
+  g.add(kitchenLight);
+
+  // Update HUD when viewing the kitchen tab
+  if (currentTab === 'kitchen') {
+    const sinkNames = ['Naya 8', 'Zia 8S', 'Eridan'];
+    const hobNames  = ['Electric', 'Gas'];
+    const dCount = slotTypes.filter(t => t === 3).length;
+    const tCount = slotTypes.filter(t => t === 2).length;
+    const doorCount = slotTypes.filter(t => t === 1).length;
+    const warn = layoutWarning ? ` | <span style="color:#ff8a4c">⚠ ${layoutWarning}</span>` : '';
+    document.getElementById('stats').innerHTML =
+      `Kitchen ${K.length.toFixed(2)}×${K.depth.toFixed(2)}m | ` +
+      `Sink: ${sinkNames[Math.round(K.sinkModel)] || '?'} (slot ${sinkSlotIdx + 1}) | ` +
+      `Hob: ${hobNames[Math.round(K.hobModel)] || '?'} (slot ${hobSlotIdx + 1}) | ` +
+      `Doors:${doorCount} Trash:${tCount} 3-Drawers:${dCount}${warn}`;
+  }
+}
+
+// ── Built-in module front faces (VEVOR-style stainless steel) ──
+
+function buildModDoor(g, cx, cy, faceZ, w, h) {
+  const frameT = 0.012;
+  const inset  = 0.022;
+  // Outer frame (top/bottom/left/right strips), slightly raised
+  box(g, stainlessMat, w,      frameT, 0.012, cx, cy + h/2 - frameT/2, faceZ);
+  box(g, stainlessMat, w,      frameT, 0.012, cx, cy - h/2 + frameT/2, faceZ);
+  box(g, stainlessMat, frameT, h - 2*frameT, 0.012, cx + w/2 - frameT/2, cy, faceZ);
+  box(g, stainlessMat, frameT, h - 2*frameT, 0.012, cx - w/2 + frameT/2, cy, faceZ);
+  // Inner recessed panel (sits slightly behind the frame face)
+  box(g, stainlessMat, w - 2*inset, h - 2*inset, 0.008, cx, cy, faceZ + 0.004);
+  // Vertical handle near the left edge, upper portion
+  const handleH = Math.min(0.16, h * 0.25);
+  box(g, stainlessDark, 0.018, handleH, 0.028,
+      cx - w/2 + 0.05, cy + h/2 - 0.10 - handleH/2, faceZ - 0.018);
+}
+
+function buildModTrash(g, cx, cy, faceZ, w, h) {
+  // Single drawer face
+  box(g, stainlessMat, w, h, 0.014, cx, cy, faceZ);
+  // Horizontal 5" bar handle centered
+  const handleW = Math.min(0.127, w * 0.7);
+  box(g, stainlessDark, handleW, 0.014, 0.026, cx, cy, faceZ - 0.016);
+  // Handle brackets at each end
+  box(g, stainlessDark, 0.009, 0.018, 0.022, cx - handleW/2, cy, faceZ - 0.011);
+  box(g, stainlessDark, 0.009, 0.018, 0.022, cx + handleW/2, cy, faceZ - 0.011);
+}
+
+function buildModDrawer3(g, cx, cy, faceZ, w, h) {
+  const seam = 0.0025;
+  const drawerH = h / 3;
+  const faceH = drawerH - seam;
+  for (let i = 0; i < 3; i++) {
+    const dCy = cy + h/2 - drawerH * (i + 0.5);
+    // Drawer face
+    box(g, stainlessMat, w, faceH, 0.014, cx, dCy, faceZ);
+    // Handle on this drawer
+    const handleW = Math.min(0.127, w * 0.55);
+    box(g, stainlessDark, handleW, 0.012, 0.022, cx, dCy, faceZ - 0.015);
+    box(g, stainlessDark, 0.008, 0.016, 0.020, cx - handleW/2, dCy, faceZ - 0.011);
+    box(g, stainlessDark, 0.008, 0.016, 0.020, cx + handleW/2, dCy, faceZ - 0.011);
+  }
+}
+
+// ── Switchable sink models ──
+function buildSink(g, model, cx, counterTopY, kDepth, wallInteriorZ) {
+  let rimW, rimD, rimMat, bowlMat, bowls;
+  if (model === 0) {
+    // Blanco Naya 8 — 815 × 500 mm, large + small bowls (composite)
+    rimW = 0.815; rimD = 0.500; rimMat = sinkNayaMat; bowlMat = sinkNayaBasin;
+    bowls = [
+      { ox:  0.155, oz: 0, bw: 0.43,  bd: 0.44,  depth: 0.20 },
+      { ox: -0.225, oz: 0, bw: 0.372, bd: 0.272, depth: 0.20 }
+    ];
+  } else if (model === 1) {
+    // Blanco Zia 8S — 1160 × 500 mm, two symmetric bowls
+    rimW = 1.160; rimD = 0.500; rimMat = sinkZiaMat; bowlMat = sinkZiaBasin;
+    bowls = [
+      { ox:  0.27, oz: 0, bw: 0.45, bd: 0.338, depth: 0.19 },
+      { ox: -0.27, oz: 0, bw: 0.45, bd: 0.338, depth: 0.19 }
+    ];
+  } else {
+    // Deante Eridan — 880 × 500 mm anthracite, large + small bowls
+    rimW = 0.880; rimD = 0.500; rimMat = sinkEridanMat; bowlMat = sinkEridanBasin;
+    bowls = [
+      { ox: -0.16,  oz: 0, bw: 0.495, bd: 0.43, depth: 0.19 },
+      { ox:  0.255, oz: 0, bw: 0.35,  bd: 0.26, depth: 0.19 }
+    ];
+  }
+  // Don't let sink hang off the back of the counter
+  rimD = Math.min(rimD, kDepth - 0.02);
+
+  const cz = wallInteriorZ - kDepth / 2;
+  const rimY = counterTopY + 0.006;
+  // Rim plate (the visible flat composite surface)
+  box(g, rimMat, rimW, 0.012, rimD, cx, rimY, cz);
+  // Bowls (the inset wells) — modelled as solid blocks of basin color below the rim
+  for (const b of bowls) {
+    const bx = cx + b.ox;
+    const bz = cz + b.oz;
+    // Outer block matching bowl footprint, descending from rim down
+    box(g, bowlMat, b.bw, b.depth + 0.005, b.bd, bx, rimY - 0.006 - b.depth / 2, bz);
+  }
+  // Faucet (back-center of deck behind the larger bowl)
+  const faucetX = cx + (model === 2 ? -0.16 : (model === 0 ? 0.155 : 0));
+  const faucetZ = cz + rimD / 2 - 0.04;
+  // Vertical column
+  const colH = 0.28;
+  box(g, stainlessMat, 0.025, colH, 0.025, faucetX, rimY + colH / 2, faucetZ);
+  // Horizontal spout reaching toward the bowl
+  box(g, stainlessMat, 0.025, 0.025, 0.16, faucetX, rimY + colH - 0.012, faucetZ - 0.08);
+  // Small joystick handle on the side of the column
+  box(g, stainlessDark, 0.045, 0.05, 0.022, faucetX + 0.025, rimY + colH - 0.05, faucetZ);
+}
+
+// ── Switchable hob models ──
+function buildHob(g, model, cx, counterTopY, kDepth, wallInteriorZ) {
+  const w = 0.59;
+  const d = Math.min(0.52, kDepth - 0.06);
+  const cz = wallInteriorZ - kDepth / 2;
+  const panelY = counterTopY + 0.006;
+
+  if (model === 0) {
+    // Electric ceramic — Bosch ET611HE17E. Smooth black glass, 4 dark heating zones, no knobs.
+    box(g, glassHobMat, w, 0.010, d, cx, panelY, cz);
+    const zoneR = 0.075;
+    const zoneMat = new THREE.MeshStandardMaterial({ color: 0x1A1A1F, metalness: 0.10, roughness: 0.25 });
+    const zoneRingMat = new THREE.MeshStandardMaterial({ color: 0x5A5050, metalness: 0.05, roughness: 0.45 });
+    for (let r = 0; r < 2; r++) {
+      for (let c = 0; c < 2; c++) {
+        const zx = cx + (c - 0.5) * w * 0.42;
+        const zz = cz + (r - 0.5) * d * 0.42;
+        // Dark filled disk
+        const disk = new THREE.Mesh(new THREE.CircleGeometry(zoneR, 32), zoneMat);
+        disk.position.set(zx, panelY + 0.0056, zz);
+        disk.rotation.x = -Math.PI / 2;
+        disk.receiveShadow = true;
+        g.add(disk);
+        // Subtle outer ring
+        const ring = new THREE.Mesh(new THREE.RingGeometry(zoneR + 0.003, zoneR + 0.006, 48), zoneRingMat);
+        ring.position.set(zx, panelY + 0.0057, zz);
+        ring.rotation.x = -Math.PI / 2;
+        g.add(ring);
+      }
+    }
+  } else {
+    // Gas — Bosch PKM631BB2E. Matte panel + 4 burner caps + cast-iron cross-grates + 4 front knobs.
+    box(g, hobMatteMat, w, 0.010, d, cx, panelY, cz);
+    for (let r = 0; r < 2; r++) {
+      for (let c = 0; c < 2; c++) {
+        const bx = cx + (c - 0.5) * w * 0.42;
+        const bz = cz + (r - 0.5) * d * 0.42;
+        // Burner cap (low cylinder)
+        const cap = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.040, 0.045, 0.014, 18),
+          hobBurnerMat);
+        cap.position.set(bx, panelY + 0.011, bz);
+        cap.castShadow = true; cap.receiveShadow = true;
+        g.add(cap);
+        // Cross-bar grate sitting above
+        const grateSize = 0.10;
+        const barH = 0.014;
+        const barT = 0.012;
+        const by = panelY + 0.024;
+        box(g, hobBurnerMat, grateSize, barH, barT, bx, by, bz);
+        box(g, hobBurnerMat, barT, barH, grateSize, bx, by, bz);
+      }
+    }
+    // 4 stainless knobs across the front edge
+    for (let k = 0; k < 4; k++) {
+      const kx = cx + (k - 1.5) * w * 0.18;
+      const kz = cz - d / 2 + 0.030;
+      const knob = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.013, 0.013, 0.020, 18),
+        hobKnobMat);
+      knob.position.set(kx, panelY + 0.015, kz);
+      knob.rotation.x = Math.PI / 2;
+      knob.castShadow = true; knob.receiveShadow = true;
+      g.add(knob);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// KITCHEN BACKDROP — slab + stub brick wall (visible only in kitchen tab)
+// ═══════════════════════════════════════════════════════════════
+function buildKitchenBackdrop() {
+  clearGroup('kitchenBackdrop');
+  clearGroup('kitchenSlab');
+  const gWall = groups.kitchenBackdrop;
+  const gSlab = groups.kitchenSlab;
+
+  const K = CONFIG.kitchen;
+  const {brickLength, brickHeight, mortarGap, wallHeight} = CONFIG.brickWall;
+  const wallBrickWidth = CONFIG.brickWall.brickWidth;
+  const fndTop = CONFIG.foundation.thickness;
+  const fndThick = CONFIG.foundation.thickness;
+  if (K.length <= 0 || K.depth <= 0) return;
+
+  const {totalX, totalZ} = getPostGridDimensions();
+  const cornerX = totalX / 2;
+  const cornerZ = totalZ / 2;
+  const wallInteriorZ = cornerZ - wallBrickWidth / 2;
+  const kitchenStartX = cornerX - wallBrickWidth / 2;
+  const kitchenEndX = kitchenStartX - K.length;
+  const kitchenCX = (kitchenStartX + kitchenEndX) / 2;
+
+  // SLAB — concrete pad under and around the kitchen
+  const slabMarginSide = 0.6;
+  const slabMarginFront = 1.2;
+  const slabMarginBack = 0.3;
+  const slabW = K.length + slabMarginSide * 2;
+  const slabD = K.depth + slabMarginFront + slabMarginBack;
+  const slabCZ = (wallInteriorZ + slabMarginBack) - slabD / 2;
+  box(gSlab, concreteMat, slabW, fndThick, slabD, kitchenCX, fndThick / 2, slabCZ);
+
+  // BRICK WALL behind the kitchen — running bond, same palette as pavilion brick wall
+  const stepL = brickLength + mortarGap;
+  const stepH = brickHeight + mortarGap;
+  const wallCourses = Math.max(0, Math.floor(wallHeight / stepH));
+  if (wallCourses === 0) return;
+
+  const wallSpan = K.length + 1.6;
+  const wallLeftX = kitchenCX - wallSpan / 2;
+  const wallRightX = kitchenCX + wallSpan / 2;
+  const wallZ = cornerZ; // same Z as pavilion brick back wall centerline
+
+  const bricksPerCourse = Math.ceil(wallSpan / stepL) + 2;
+  const maxBricks = wallCourses * bricksPerCourse + 50;
   const brickGeo = new THREE.BoxGeometry(1, 1, 1);
   const brickMatI = new THREE.MeshStandardMaterial({ roughness: 0.82 });
   const mesh = new THREE.InstancedMesh(brickGeo, brickMatI, maxBricks);
@@ -1545,151 +1983,30 @@ function buildKitchen() {
   const color = new THREE.Color();
   let idx = 0;
 
-  function setColor() {
-    color.setHSL(0.055 + Math.random()*0.025, 0.65 + Math.random()*0.15, 0.32 + Math.random()*0.1);
-    mesh.setColorAt(idx, color);
-  }
-
-  // === DIVIDER WALLS (perpendicular to back wall, running along -Z) ===
-  for (let i = 0; i <= sections; i++) {
-    const divX = kitchenStartX - i * sectionWidth;
-    for (let course = 0; course < dividerCourses; course++) {
-      const y = fndTop + course * stepH + brickHeight / 2;
-      const isOdd = course % 2 === 1;
-      const offset = isOdd ? stepL / 2 : 0;
-
-      let z = wallInteriorZ - offset;
-      while (z - brickLength / 2 > cabinetFrontZ - stepL) {
-        let bL = brickLength;
-        let bz = z - brickLength / 2;
-
-        // Clip at back wall
-        if (bz + bL > wallInteriorZ) { bL = wallInteriorZ - bz; }
-        // Clip at front face
-        if (bz < cabinetFrontZ) { bL -= (cabinetFrontZ - bz); bz = cabinetFrontZ; }
-        if (bL < mortarGap) { z -= stepL; continue; }
-
-        pos.set(divX, y, bz + bL / 2);
-        scl.set(brickWidth, brickHeight, bL);
-        mat4.compose(pos, quat, scl);
-        mesh.setMatrixAt(idx, mat4);
-        setColor();
-        idx++;
-        z -= stepL;
-      }
+  for (let c = 0; c < wallCourses; c++) {
+    const y = fndTop + c * stepH + brickHeight / 2;
+    const off = (c % 2 === 1) ? stepL / 2 : 0;
+    let x = wallLeftX - off;
+    while (x < wallRightX + stepL) {
+      let bL = brickLength;
+      let bx = x;
+      if (bx + bL > wallRightX) bL = wallRightX - bx;
+      if (bx < wallLeftX) { bL -= (wallLeftX - bx); bx = wallLeftX; }
+      if (bL < mortarGap) { x += stepL; continue; }
+      pos.set(bx + bL / 2, y, wallZ);
+      scl.set(bL, brickHeight, wallBrickWidth);
+      mat4.compose(pos, quat, scl);
+      mesh.setMatrixAt(idx, mat4);
+      color.setHSL(0.055 + Math.random()*0.025, 0.65 + Math.random()*0.15, 0.32 + Math.random()*0.1);
+      mesh.setColorAt(idx, color);
+      idx++;
+      x += stepL;
     }
   }
-
-  // === KICKBOARDS (front face, one per section) ===
-  if (kickHeight >= stepH) {
-    for (let s = 0; s < sections; s++) {
-      const leftX = kitchenStartX - s * sectionWidth - brickWidth / 2;
-      const rightX = kitchenStartX - (s + 1) * sectionWidth + brickWidth / 2;
-      const spanX = leftX - rightX;
-
-      for (let course = 0; course < kickCourses; course++) {
-        const y = fndTop + course * stepH + brickHeight / 2;
-        const isOdd = course % 2 === 1;
-        const offset = isOdd ? stepL / 2 : 0;
-
-        let x = leftX - offset;
-        while (x - brickLength / 2 > rightX - stepL) {
-          let bL = brickLength;
-          let bx = x - brickLength / 2;
-
-          // Clip at left divider
-          if (bx + bL > leftX) { bL = leftX - bx; }
-          // Clip at right divider
-          if (bx < rightX) { bL -= (rightX - bx); bx = rightX; }
-          if (bL < mortarGap) { x -= stepL; continue; }
-
-          pos.set(bx + bL / 2, y, cabinetFrontZ);
-          scl.set(bL, brickHeight, brickWidth);
-          mat4.compose(pos, quat, scl);
-          mesh.setMatrixAt(idx, mat4);
-          setColor();
-          idx++;
-          x -= stepL;
-        }
-      }
-    }
-  }
-
   mesh.count = idx;
   mesh.instanceMatrix.needsUpdate = true;
   if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  g.add(mesh);
-
-  // === WOODEN COUNTER ===
-  const counterW = length + 2 * counterOverhang;
-  const counterD = depth + counterOverhang; // overhang only at front
-  const counterY = fndTop + dividerCourses * stepH + counterThick / 2;
-  const counterCX = (kitchenStartX + kitchenEndX) / 2;
-  const counterCZ = wallInteriorZ - counterD / 2;
-  box(g, acaciaMat, counterW, counterThick, counterD, counterCX, counterY, counterCZ);
-
-  // === KITCHEN WALL LIGHT ===
-  const kitchenLight = new THREE.PointLight(0xFFF0DD, 0.6, 4);
-  kitchenLight.position.set(counterCX, counterY + 0.6, wallInteriorZ - 0.05);
-  g.add(kitchenLight);
-
-  // === SINK ===
-  const {sinkSection, hobSection} = CONFIG.kitchen;
-  const counterTopY = fndTop + dividerCourses * stepH + counterThick;
-
-  if (sinkSection >= 0 && sinkSection < sections) {
-    const sinkMat = new THREE.MeshStandardMaterial({color: 0xB0B8C0, roughness: 0.25, metalness: 0.85});
-    const basinMat = new THREE.MeshStandardMaterial({color: 0x404550, roughness: 0.5, metalness: 0.4});
-    const cx = kitchenStartX - (sinkSection + 0.5) * sectionWidth;
-    const cz = wallInteriorZ - depth / 2;
-
-    const rimW = sectionWidth * 0.75;
-    const rimD = depth * 0.65;
-    // Rim
-    box(g, sinkMat, rimW, 0.012, rimD, cx, counterTopY + 0.006, cz);
-    // Basin
-    box(g, basinMat, rimW - 0.03, 0.12, rimD - 0.03, cx, counterTopY - 0.06, cz);
-    // Faucet column
-    box(g, sinkMat, 0.02, 0.22, 0.02, cx, counterTopY + 0.11, cz + rimD / 2 - 0.02);
-    // Faucet spout
-    box(g, sinkMat, 0.02, 0.02, 0.10, cx, counterTopY + 0.22, cz + rimD / 2 - 0.07);
-  }
-
-  // === GAS HOBS ===
-  if (hobSection >= 0 && hobSection < sections) {
-    const hobPanelMat = new THREE.MeshStandardMaterial({color: 0x2A2A2E, roughness: 0.15, metalness: 0.05});
-    const burnerMat = new THREE.MeshStandardMaterial({color: 0x6A6A6A, roughness: 0.6, metalness: 0.6});
-    const knobMat = new THREE.MeshStandardMaterial({color: 0xC0C0C0, roughness: 0.3, metalness: 0.7});
-    const cx = kitchenStartX - (hobSection + 0.5) * sectionWidth;
-    const cz = wallInteriorZ - depth / 2;
-
-    const panelW = sectionWidth * 0.78;
-    const panelD = depth * 0.70;
-    // Panel
-    box(g, hobPanelMat, panelW, 0.008, panelD, cx, counterTopY + 0.004, cz);
-
-    // 4 burner grates in 2x2 grid
-    const grateSize = 0.06;
-    const barW = 0.008;
-    const barH = 0.01;
-    for (let r = 0; r < 2; r++) {
-      for (let c = 0; c < 2; c++) {
-        const bx = cx + (c - 0.5) * panelW * 0.38;
-        const bz = cz + (r - 0.5) * panelD * 0.38;
-        const by = counterTopY + 0.008 + barH / 2;
-        // Cross bars
-        box(g, burnerMat, grateSize, barH, barW, bx, by, bz);
-        box(g, burnerMat, barW, barH, grateSize, bx, by, bz);
-      }
-    }
-
-    // 4 knobs along front edge
-    for (let k = 0; k < 4; k++) {
-      const kx = cx + (k - 1.5) * panelW * 0.22;
-      const kz = cz - panelD / 2 + 0.02;
-      box(g, knobMat, 0.015, 0.012, 0.015, kx, counterTopY + 0.01, kz);
-    }
-  }
+  gWall.add(mesh);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2391,6 +2708,7 @@ function rebuildModel() {
   buildPanelling();
   buildBrickWall();
   buildKitchen();
+  buildKitchenBackdrop();
   buildFence();
   buildFurniture();
   buildDimensions();
@@ -2408,7 +2726,9 @@ function scheduleRebuild() {
 // ═══════════════════════════════════════════════════════════════
 function createGUI() {
   const container = document.getElementById('gui-sections');
-  GUI_SCHEMA.forEach((sec, si) => {
+  container.innerHTML = '';
+  const sections = GUI_SCHEMA.filter(sec => (sec.tab || 'pavilion') === currentTab);
+  sections.forEach((sec, si) => {
     const div = document.createElement('div');
     div.className = 'gs' + (sec.open ? ' open' : '');
     let html = `<div class="gh" onclick="this.parentElement.classList.toggle('open')">
@@ -2474,6 +2794,89 @@ window.toggleGUI = function() {
 };
 
 // ═══════════════════════════════════════════════════════════════
+// TAB SWITCHING — Pavilion vs Kitchen
+// ═══════════════════════════════════════════════════════════════
+// Groups visible only in the pavilion tab
+const PAVILION_ONLY_GROUPS = ['foundation','pathways','posts','beams','ridge','braces',
+  'rafters','roof','panelling','brickWall','fence','furniture','dims'];
+// Groups visible only in the kitchen tab
+const KITCHEN_ONLY_GROUPS = ['kitchenBackdrop','kitchenSlab'];
+
+// Per-tab orbit snapshots
+const TAB_ORBIT = {
+  pavilion: { theta: Math.PI*0.25, phi: Math.PI*0.32, radius: 14,
+              targetX: 0, targetY: 1.8, targetZ: 0 },
+  kitchen:  { theta: -Math.PI*0.45, phi: Math.PI*0.42, radius: 4.2,
+              // target computed dynamically from kitchen footprint at switch time
+              targetX: null, targetY: 1.0, targetZ: null }
+};
+
+function computeKitchenCameraTarget() {
+  const K = CONFIG.kitchen;
+  const wallBrickWidth = CONFIG.brickWall.brickWidth;
+  const {totalX, totalZ} = getPostGridDimensions();
+  const cornerX = totalX / 2;
+  const cornerZ = totalZ / 2;
+  const wallInteriorZ = cornerZ - wallBrickWidth / 2;
+  const kitchenStartX = cornerX - wallBrickWidth / 2;
+  const kitchenEndX = kitchenStartX - K.length;
+  return {
+    x: (kitchenStartX + kitchenEndX) / 2,
+    y: CONFIG.foundation.thickness + K.height - 0.10,
+    z: wallInteriorZ - K.depth / 2
+  };
+}
+
+window.switchTab = function(tab) {
+  if (tab === currentTab) return;
+  // Save current orbit snapshot for the tab we're leaving
+  TAB_ORBIT[currentTab].theta = orbit.theta;
+  TAB_ORBIT[currentTab].phi = orbit.phi;
+  TAB_ORBIT[currentTab].radius = orbit.radius;
+  if (currentTab === 'pavilion') {
+    TAB_ORBIT.pavilion.targetX = orbit.target.x;
+    TAB_ORBIT.pavilion.targetY = orbit.target.y;
+    TAB_ORBIT.pavilion.targetZ = orbit.target.z;
+  }
+
+  currentTab = tab;
+  // Toggle group visibility
+  PAVILION_ONLY_GROUPS.forEach(n => { if (groups[n]) groups[n].visible = (tab === 'pavilion'); });
+  KITCHEN_ONLY_GROUPS.forEach(n => { if (groups[n]) groups[n].visible = (tab === 'kitchen'); });
+  // Force kitchen visible when in kitchen tab (in case user unchecked it from pavilion)
+  if (tab === 'kitchen' && groups.kitchen) groups.kitchen.visible = true;
+
+  // Update active tab button styling
+  document.getElementById('tab_pavilion').classList.toggle('active', tab === 'pavilion');
+  document.getElementById('tab_kitchen').classList.toggle('active', tab === 'kitchen');
+
+  // Camera reposition
+  const snap = TAB_ORBIT[tab];
+  orbit.theta = snap.theta;
+  orbit.phi = snap.phi;
+  orbit.radius = snap.radius;
+  if (tab === 'kitchen') {
+    const t = computeKitchenCameraTarget();
+    orbit.target.set(t.x, snap.targetY, t.z);
+  } else {
+    orbit.target.set(snap.targetX, snap.targetY, snap.targetZ);
+  }
+  updateCam();
+
+  // Regenerate GUI sections for the new tab
+  createGUI();
+
+  // Refresh HUD stats
+  if (tab === 'kitchen') {
+    // Trigger a kitchen rebuild so updateStats fires with kitchen info
+    buildKitchen();
+  } else {
+    // Pavilion stats from brick wall
+    buildBrickWall();
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════
 // ANIMATION LOOP
 // ═══════════════════════════════════════════════════════════════
 function animate() {
@@ -2488,6 +2891,8 @@ initScene();
 initControls();
 createGUI();
 rebuildModel();
+// Default tab is pavilion: hide kitchen-only backdrop groups
+KITCHEN_ONLY_GROUPS.forEach(n => { if (groups[n]) groups[n].visible = false; });
 animate();
 </script>
 </body>
