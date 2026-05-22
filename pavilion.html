@@ -1566,13 +1566,15 @@ function updateStats(brickCount, courses) {
 // ═══════════════════════════════════════════════════════════════
 // Module geometry table — physical dimensions of each VEVOR built-in (m)
 //   type 0=open, 1=door, 2=trash, 3=drawer3
-// Body depth (d): how far the drawer/cabinet extends back from the face plate.
-// Door has no body (d = 0) — it's a face panel covering an open under-counter space.
+// w/h = outer "front-looking" dimensions including the trim flange.
+// cutW/cutH = brick-opening (cutout) dimensions — the drawer faces and body fit here.
+// The trim flange is a stainless rectangle that covers the brick edges around the cutout
+// (outer = w × h, inner = cutW × cutH). d = body depth. Door has no body.
 const KITCHEN_MOD = [
-  { w: 0,     h: 0,     d: 0,     label: 'open' },
-  { w: 0.79,  h: 0.79,  d: 0,     label: 'door' },
-  { w: 0.344, h: 0.655, d: 0.500, label: 'trash' },
-  { w: 0.46,  h: 0.59,  d: 0.590, label: 'drawer3' }
+  { w: 0,     h: 0,     cutW: 0,     cutH: 0,     d: 0,     label: 'open' },
+  { w: 0.79,  h: 0.79,  cutW: 0.79,  cutH: 0.79,  d: 0,     label: 'door' },
+  { w: 0.344, h: 0.655, cutW: 0.320, cutH: 0.615, d: 0.510, label: 'trash' },
+  { w: 0.46,  h: 0.59,  cutW: 0.425, cutH: 0.550, d: 0.595, label: 'drawer3' }
 ];
 
 // Sink rim outer dimensions (m). Indexed by sinkModel.
@@ -1629,9 +1631,10 @@ function buildKitchen() {
   const doorModelIdx = Math.max(0, Math.min(DOOR_MODELS.length - 1, Math.round(K.doorModel)));
   const doorW = DOOR_MODELS[doorModelIdx].w;
   const doorH = DOOR_MODELS[doorModelIdx].h;
-  // Lookup module footprint (w, h) for a given slot type; doors use the selected DOOR_MODELS entry.
+  // Lookup module footprint (w, h, cutW, cutH, d) for a given slot type.
+  // Doors use the selected DOOR_MODELS entry and have no separate cutout (cutW=w, cutH=h).
   const modSize = (t) => {
-    if (t === 1) return { w: doorW, h: doorH, d: 0 };
+    if (t === 1) return { w: doorW, h: doorH, cutW: doorW, cutH: doorH, d: 0 };
     return KITCHEN_MOD[t];
   };
 
@@ -1854,8 +1857,8 @@ function buildKitchen() {
     // Stainless face plates use fixed product dimensions (not scaled to slot width).
     const mod = modSize(s.type);
     if (s.type === 1) buildModDoor(g, s.centerX, cy, faceZ, mod.w, mod.h);
-    else if (s.type === 2) buildModTrash(g, s.centerX, cy, faceZ, mod.w, mod.h, mod.d);
-    else if (s.type === 3) buildModDrawer3(g, s.centerX, cy, faceZ, mod.w, mod.h, mod.d);
+    else if (s.type === 2) buildModTrash(g, s.centerX, cy, faceZ, mod);
+    else if (s.type === 3) buildModDrawer3(g, s.centerX, cy, faceZ, mod);
   }
 
   // ============== SINK + HOB ==============
@@ -1932,26 +1935,47 @@ function buildDrawerBody(g, cx, cy, faceZ, w, h, d) {
       cx + w / 2 - wallT / 2, cy, bodyCz);
 }
 
-function buildModTrash(g, cx, cy, faceZ, w, h, d) {
-  // Single drawer face
+// Stainless trim flange — 4 strips forming a rectangle frame around the cutout.
+// Mounted slightly forward of the face plate to overlap the surrounding brick edges.
+function buildTrimFlange(g, cx, cy, faceZ, outerW, outerH, cutW, cutH) {
+  const sideT = (outerW - cutW) / 2;
+  const vertT = (outerH - cutH) / 2;
+  const z = faceZ - 0.002; // 2mm in front of face plate
+  if (vertT > 0.001) {
+    box(g, stainlessMat, outerW, vertT, 0.006, cx, cy + outerH/2 - vertT/2, z);
+    box(g, stainlessMat, outerW, vertT, 0.006, cx, cy - outerH/2 + vertT/2, z);
+  }
+  if (sideT > 0.001) {
+    box(g, stainlessMat, sideT, cutH, 0.006, cx - outerW/2 + sideT/2, cy, z);
+    box(g, stainlessMat, sideT, cutH, 0.006, cx + outerW/2 - sideT/2, cy, z);
+  }
+}
+
+function buildModTrash(g, cx, cy, faceZ, mod) {
+  buildTrimFlange(g, cx, cy, faceZ, mod.w, mod.h, mod.cutW, mod.cutH);
+  const w = mod.cutW;
+  const h = mod.cutH;
+  // Single drawer face inside the cutout
   box(g, stainlessMat, w, h, 0.014, cx, cy, faceZ);
   // Horizontal 5" bar handle centered
   const handleW = Math.min(0.127, w * 0.7);
   box(g, stainlessDark, handleW, 0.014, 0.026, cx, cy, faceZ - 0.016);
-  // Handle brackets at each end
   box(g, stainlessDark, 0.009, 0.018, 0.022, cx - handleW/2, cy, faceZ - 0.011);
   box(g, stainlessDark, 0.009, 0.018, 0.022, cx + handleW/2, cy, faceZ - 0.011);
-  // Drawer body extending back into the cabinet
-  buildDrawerBody(g, cx, cy, faceZ, w, h, d);
+  // Drawer body extending back at cutout dimensions
+  buildDrawerBody(g, cx, cy, faceZ, w, h, mod.d);
 }
 
-function buildModDrawer3(g, cx, cy, faceZ, w, h, d) {
+function buildModDrawer3(g, cx, cy, faceZ, mod) {
+  buildTrimFlange(g, cx, cy, faceZ, mod.w, mod.h, mod.cutW, mod.cutH);
+  const w = mod.cutW;
+  const h = mod.cutH;
   const seam = 0.0025;
   const drawerH = h / 3;
   const faceH = drawerH - seam;
   for (let i = 0; i < 3; i++) {
     const dCy = cy + h/2 - drawerH * (i + 0.5);
-    // Drawer face
+    // Drawer face inside the cutout
     box(g, stainlessMat, w, faceH, 0.014, cx, dCy, faceZ);
     // Handle on this drawer
     const handleW = Math.min(0.127, w * 0.55);
@@ -1959,7 +1983,7 @@ function buildModDrawer3(g, cx, cy, faceZ, w, h, d) {
     box(g, stainlessDark, 0.008, 0.016, 0.020, cx - handleW/2, dCy, faceZ - 0.011);
     box(g, stainlessDark, 0.008, 0.016, 0.020, cx + handleW/2, dCy, faceZ - 0.011);
     // Drawer body for this drawer (3 stacked open-top trays)
-    buildDrawerBody(g, cx, dCy, faceZ, w, faceH, d);
+    buildDrawerBody(g, cx, dCy, faceZ, w, faceH, mod.d);
   }
 }
 
