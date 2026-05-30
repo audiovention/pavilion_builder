@@ -182,3 +182,56 @@ The wall corner is currently computed from the post grid's back-right corner (`+
 - Original plans: `16x20_pavilion_plans.pdf` from MyOutdoorPlans.com
 - Brick standard: Bulgarian standard brick 250×120×65mm, mortar joint 10mm
 - All structural dimensions derived from the PDF's cut list and step diagrams, converted to metric
+
+---
+
+# Bathroom Tile Designer (`bathrooms.html`)
+
+A **separate, self-contained** tool (not part of the pavilion) for designing tile layouts for two real bathrooms before laying them. Same conventions as `pavilion.html`: Three.js r128 from CDN, single HTML file, all dimensions in **metres**, GUI generated from a schema, `cfgGet`/`cfgSet` dot-notation, debounced `scheduleRebuild()`. It does **not** share code with `pavilion.html` — edit each file independently.
+
+## What it does
+
+- **Two bathrooms**, switched by the top tabs:
+  - **Bath A** — a simple rectangle.
+  - **Bath B** — a rectangle with a parametric corner **notch** (L-shape).
+- **Two view modes**, switched by the green toggle:
+  - **3D Room** — orbit the tiled interior.
+  - **Unfold 2D** — top-down "net": floor in the centre, each wall folded flat outward (a tile-setter's elevation layout).
+- Everything is parametric: room W/D/H, notch corner + width + depth, door (which wall, position, width, height), floor tiles (size, grout, **angle**, start X/Z), and **per-wall** tile settings.
+
+## Tiles — KEROS "Kalina Gris" (the user's actual product)
+
+Real product, sourced from praktiker.bg. Photos live in `tiles/` and are loaded as textures (one image mapped per tile face, `ClampToEdge`). Falls back to procedural canvas textures if the JPGs are missing, and the GUI **Display → Texture** toggle switches between photos and flat colours.
+
+| File | Product | Real size |
+|------|---------|-----------|
+| `tiles/kalina_gris_floor.jpg`      | Granitogres floor          | 33×33 cm |
+| `tiles/kalina_gris_wall.jpg`       | Faience wall field         | 25×50 cm |
+| `tiles/kalina_gris_decor.jpg`      | Patchwork décor            | 25×50 cm |
+| `tiles/kalina_olas_gris_decor.jpg` | "Olas" wave relief décor   | 25×50 cm |
+
+Default tile sizes in CONFIG match these (floor 0.33×0.33, wall 0.50×0.25). **Note:** images downloaded from praktiker's media API need the `?context=…` token from the product page HTML, and re-encode with `sips` if a browser reports the JPG as not-found (one raw download was subtly malformed).
+
+## Architecture
+
+- **CONFIG** holds `view`, `active`, `texture`, and `A`/`B` bath objects built by `bathCfg()`. Each wall is built by `wallCfg()` (tileW/H, orient, bond, grout, offsets, band rows/height/tile, accent).
+- **GUI_SCHEMA is built programmatically** by `buildSchema(tab)` so the four walls stay DRY — there is no static schema array.
+- **Geometry is built from a single primitive:** `poly(group, mat, pts, uvs)` — a fan-triangulated convex polygon with explicit UVs. Used for every tile, the grout backing, and the screed. Cut tiles keep the pattern continuous because UVs are computed from each clipped vertex's position within the tile.
+- **Room shape:** `roomPolygon(R)` returns a CCW point list (4 corners, or 6 for the notch). `floorRects(R)` returns 1–2 axis-aligned rectangles covering the floor (the notch splits the L into two rects).
+- **Floor tiling** (`buildFloorTiles`): a rotated/offset grid clipped to each floor rect via Sutherland–Hodgman (`clipToRect`). Handles angle + L-shape.
+- **Wall tiling** (`buildWall`): each polygon edge → a wall in local (u=along, v=up) space. Tiles are axis-aligned rects, clipped to the wall and **carved around the door** with `rectSubtract`. Each polygon edge is classified to a cardinal (N/E/S/W) via its outward normal, so it uses that cardinal's wall config (notch sub-walls inherit from the nearest cardinal). The door goes on the **longest** edge of the chosen cardinal.
+- **3D vs Unfold** differ only in the wall's vertical direction: `(0,1,0)` in 3D, or the outward horizontal normal (folded flat) in unfold. One flag, no separate geometry.
+- **Groups:** `floor`, `walls`, `trim` (door leaf), `base` (grout backing + screed). `frameCamera()` repositions the orbit per bath + view.
+
+## Effect / décor tiles
+
+- **Band:** `bandRows` (0/1/2) of décor at `bandHeight` (m), tile chosen by `bandTile` (0 patchwork, 1 olas, 2 plain). Selected by row v-centre proximity to the band height.
+- **Accent wall:** `accent` (0 off, else décor index +1) tiles the **whole** wall in that décor (overrides the band).
+
+## Known limitations / TODO
+
+- Texture is not rotated for portrait (vertical) tile orientation — the near-isotropic concrete look hides the stretch; revisit if directional tiles are added.
+- In the **Unfold** view of the notched bath, the two notch sub-walls fold into the notch area and can overlap their neighbours slightly. Readable, but not a clean net.
+- No ceiling; the room is open-topped for visibility.
+- No per-tile manual override, no export, no tile-count/m² cut-list beyond the HUD estimate.
+- Door is a flat recessed leaf (no frame/handle modelling).

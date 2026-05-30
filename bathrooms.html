@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bathroom Tile Designer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#111;overflow:hidden;font-family:'Segoe UI',system-ui,sans-serif;color:#ddd}
+canvas{display:block}
+#gui{position:fixed;top:0;right:0;width:320px;height:100vh;background:rgba(10,12,18,0.95);
+  border-left:1px solid rgba(255,255,255,0.07);overflow-y:auto;z-index:100;padding:14px;
+  scrollbar-width:thin;scrollbar-color:#333 transparent;transition:transform .3s}
+#gui.collapsed{transform:translateX(280px)}
+#gui::-webkit-scrollbar{width:5px}
+#gui::-webkit-scrollbar-thumb{background:#333;border-radius:3px}
+#toggle{position:fixed;top:8px;right:328px;width:32px;height:32px;background:rgba(10,12,18,0.9);
+  border:1px solid rgba(255,255,255,0.12);border-radius:5px;color:#aaa;cursor:pointer;z-index:101;
+  display:flex;align-items:center;justify-content:center;font-size:16px;transition:right .3s}
+#toggle.collapsed{right:42px}
+.gt{font-size:15px;font-weight:700;margin-bottom:12px;color:#fff;letter-spacing:1.2px;text-transform:uppercase}
+.tabs{display:flex;gap:4px;margin-bottom:8px}
+.tab{flex:1;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:5px;
+  color:#888;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;
+  padding:8px 0;cursor:pointer;transition:background .15s,color .15s,border-color .15s}
+.tab:hover{background:rgba(255,255,255,0.07);color:#bbb}
+.tab.active{background:rgba(74,158,255,0.15);border-color:rgba(74,158,255,0.5);color:#4a9eff}
+.viewtabs{display:flex;gap:4px;margin-bottom:14px}
+.vtab{flex:1;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:5px;
+  color:#888;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;
+  padding:7px 0;cursor:pointer;transition:background .15s,color .15s,border-color .15s}
+.vtab:hover{background:rgba(255,255,255,0.07);color:#bbb}
+.vtab.active{background:rgba(120,200,120,0.15);border-color:rgba(120,200,120,0.5);color:#7ad07a}
+.gs{margin-bottom:8px;border:1px solid rgba(255,255,255,0.06);border-radius:6px;overflow:hidden}
+.gh{background:rgba(255,255,255,0.04);padding:8px 10px;cursor:pointer;display:flex;
+  justify-content:space-between;align-items:center;font-weight:600;font-size:11px;
+  text-transform:uppercase;letter-spacing:.5px;user-select:none}
+.gh:hover{background:rgba(255,255,255,0.07)}
+.gb{padding:8px 10px;display:none}
+.gs.open .gb{display:block}
+.gh .ar{transition:transform .2s;font-size:10px}
+.gs.open .gh .ar{transform:rotate(90deg)}
+.gr{display:flex;align-items:center;margin-bottom:6px;gap:6px;overflow:hidden}
+.gr label{flex:0 0 92px;font-size:11px;color:#888}
+.gr input[type=range]{flex:1;min-width:0;accent-color:#4a9eff;height:3px;cursor:pointer}
+.gv{width:52px;flex:0 0 52px;text-align:right;font-size:11px;font-family:Consolas,monospace;color:#4a9eff;
+  background:rgba(74,158,255,0.08);border:1px solid rgba(74,158,255,0.15);border-radius:3px;
+  padding:2px 5px;outline:none}
+.gv:focus{border-color:#4a9eff}
+.gc{display:flex;align-items:center;margin-bottom:4px;gap:8px}
+.gc label{font-size:11px;color:#888;cursor:pointer;user-select:none}
+.gc input[type=checkbox]{accent-color:#4a9eff;cursor:pointer;width:14px;height:14px}
+.gs-sel{flex:1;min-width:0;font-size:11px;font-family:Consolas,monospace;color:#4a9eff;
+  background:rgba(74,158,255,0.08);border:1px solid rgba(74,158,255,0.15);border-radius:3px;
+  padding:3px 6px;outline:none;cursor:pointer}
+.gs-sel:focus{border-color:#4a9eff}
+.gs-sel option{background:#1e1e1e;color:#4a9eff}
+#info{position:fixed;bottom:8px;left:10px;font-size:11px;color:rgba(255,255,255,0.4);z-index:100}
+#stats{position:fixed;top:8px;left:10px;font-size:11px;color:rgba(255,255,255,0.6);z-index:100;
+  background:rgba(0,0,0,0.5);padding:6px 10px;border-radius:4px;white-space:pre;line-height:1.5}
+.subhdr{font-size:10px;color:#5a8;letter-spacing:.5px;text-transform:uppercase;margin:8px 0 4px;font-weight:700}
+</style>
+</head>
+<body>
+<div id="stats"></div>
+<div id="info">LMB: Rotate &nbsp; RMB: Pan &nbsp; Scroll: Zoom</div>
+<button id="toggle" onclick="toggleGUI()">☰</button>
+<div id="gui">
+  <div class="gt">Bathroom Tiles</div>
+  <div class="tabs">
+    <button class="tab active" id="tab_A" onclick="switchTab('A')">Bath A · Rect</button>
+    <button class="tab" id="tab_B" onclick="switchTab('B')">Bath B · Notch</button>
+  </div>
+  <div class="viewtabs">
+    <button class="vtab active" id="view_3d" onclick="switchView('3d')">3D Room</button>
+    <button class="vtab" id="view_unfold" onclick="switchView('unfold')">Unfold 2D</button>
+  </div>
+  <div id="gui-sections"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════
+// CONFIGURATION
+// All dimensions in METRES. Tile sizes default to the real KEROS
+// "Kalina Gris" range: floor granitogres 33×33 cm, wall faience 25×50 cm,
+// décor (patchwork + "Olas" wave) 25×50 cm.
+// ═══════════════════════════════════════════════════════════════
+
+// Per-wall tile config factory. orient: 0=lay as set, 1=rotate 90° (swap W/H).
+// bond: 0=stacked (grid), 1=brick (offset rows). bandRows: 0=off,1,2 décor rows.
+// bandTile/accent: 0=Patchwork décor, 1=Olas wave décor, 2=Plain accent colour.
+// accent: 0=off (field tile), else (accent-1) selects décor for a FULL accent wall.
+function wallCfg(o){
+  return Object.assign({
+    tileW:0.50, tileH:0.25, grout:0.002,
+    orient:0, bond:1, offsetX:0, offsetY:0,
+    bandRows:0, bandHeight:1.10, bandTile:0,
+    accent:0
+  }, o||{});
+}
+
+function bathCfg(o){
+  const c = {
+    room:   { width:2.0, depth:2.4, height:2.60,
+              notchCorner:2, notchWidth:0.0, notchDepth:0.0 },
+    door:   { wall:0, position:0.5, width:0.80, height:2.05 },
+    floor:  { tileW:0.33, tileH:0.33, grout:0.003, angle:0, offsetX:0, offsetY:0 },
+    walls:  { N:wallCfg(), E:wallCfg(), S:wallCfg(), W:wallCfg() }
+  };
+  return Object.assign(c, o||{});
+}
+
+const CONFIG = {
+  view: '3d',          // '3d' | 'unfold'
+  active: 'A',
+  texture: 1,          // 1 = Kalina Gris photos, 0 = flat colours
+  A: bathCfg(),
+  B: bathCfg({
+    room: { width:2.2, depth:2.6, height:2.60,
+            notchCorner:2, notchWidth:0.70, notchDepth:0.55 },
+    door: { wall:0, position:0.4, width:0.80, height:2.05 }
+  })
+};
+
+// Showcase defaults: an effect band on A's back wall, an accent wall on B.
+CONFIG.A.walls.N.bandRows = 2;  CONFIG.A.walls.N.bandHeight = 1.10; CONFIG.A.walls.N.bandTile = 0;
+CONFIG.B.walls.N.accent  = 2;   // 2 => Olas wave full accent wall
+CONFIG.B.walls.E.bandRows = 1;  CONFIG.B.walls.E.bandHeight = 1.20; CONFIG.B.walls.E.bandTile = 0;
+
+// ═══════════════════════════════════════════════════════════════
+// CONFIG ACCESS HELPERS (dot-notation, e.g. 'A.walls.N.tileW')
+// ═══════════════════════════════════════════════════════════════
+function cfgGet(path){ return path.split('.').reduce((o,k)=>o[k], CONFIG); }
+function cfgSet(path,val){
+  const ks = path.split('.'); const last = ks.pop();
+  ks.reduce((o,k)=>o[k], CONFIG)[last] = val;
+}
+
+const DECOR_NAMES = ['Patchwork décor','Olas wave décor','Plain accent'];
+const CARDINALS = ['N','E','S','W'];
+const DOOR_WALL_NAMES = ['Back (N)','Right (E)','Front (S)','Left (W)'];
+
+// ═══════════════════════════════════════════════════════════════
+// PROCEDURAL FALLBACK TEXTURES (used in "flat colours" mode and if the
+// Kalina Gris JPGs fail to load).
+// ═══════════════════════════════════════════════════════════════
+function makeCanvas(w,h){ const c=document.createElement('canvas'); c.width=w; c.height=h; return c; }
+
+function concreteCanvas(base){
+  const c=makeCanvas(256,256), x=c.getContext('2d');
+  x.fillStyle=base; x.fillRect(0,0,256,256);
+  const img=x.getImageData(0,0,256,256), d=img.data;
+  for(let i=0;i<d.length;i+=4){ const n=(Math.random()-0.5)*26; d[i]+=n; d[i+1]+=n; d[i+2]+=n; }
+  x.putImageData(img,0,0);
+  // a few soft cloudy blotches
+  for(let i=0;i<40;i++){
+    x.globalAlpha=0.05; x.fillStyle=Math.random()<0.5?'#fff':'#000';
+    x.beginPath(); x.arc(Math.random()*256,Math.random()*256,8+Math.random()*30,0,7); x.fill();
+  }
+  x.globalAlpha=1;
+  return new THREE.CanvasTexture(c);
+}
+function decorCanvas(){
+  const c=makeCanvas(256,256), x=c.getContext('2d');
+  x.fillStyle='#cdccc8'; x.fillRect(0,0,256,256);
+  x.strokeStyle='#8a8f96'; x.lineWidth=4;
+  // simple symmetric "encaustic" motif
+  x.save(); x.translate(128,128);
+  for(let r=0;r<4;r++){
+    x.rotate(Math.PI/2);
+    x.beginPath(); x.moveTo(0,-90); x.quadraticCurveTo(60,-30,0,0); x.quadraticCurveTo(-60,-30,0,-90); x.stroke();
+    x.beginPath(); x.arc(0,-50,16,0,7); x.stroke();
+  }
+  x.restore();
+  x.strokeRect(6,6,244,244);
+  return new THREE.CanvasTexture(c);
+}
+function waveCanvas(){
+  const c=makeCanvas(256,256), x=c.getContext('2d');
+  const g=x.createLinearGradient(0,0,0,256); g.addColorStop(0,'#d6d6d2'); g.addColorStop(1,'#b9bbb9');
+  x.fillStyle=g; x.fillRect(0,0,256,256);
+  x.strokeStyle='rgba(120,125,130,0.5)'; x.lineWidth=6;
+  for(let y=20;y<256;y+=34){
+    x.beginPath(); x.moveTo(0,y);
+    for(let xx=0;xx<=256;xx+=16) x.lineTo(xx, y+Math.sin(xx/30)*10);
+    x.stroke();
+  }
+  return new THREE.CanvasTexture(c);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SCENE
+// ═══════════════════════════════════════════════════════════════
+let scene, camera, renderer, sunLight;
+const groups = {};
+const groupNames = ['floor','walls','trim','base'];
+let MAT = {};   // active material set chosen by CONFIG.texture
+let photoMat = {}, colorMat = {};
+let groutMat, plainAccentMat, doorMat, frameMat, screedMat;
+
+function loadTile(url, fallbackTex){
+  const m = new THREE.MeshStandardMaterial({ map:fallbackTex, roughness:0.55, metalness:0.0, side:THREE.DoubleSide });
+  fallbackTex.wrapS=fallbackTex.wrapT=THREE.ClampToEdgeWrapping;
+  fallbackTex.encoding = THREE.sRGBEncoding;
+  const loader=new THREE.TextureLoader();
+  loader.load(url, (tex)=>{
+    tex.wrapS=tex.wrapT=THREE.ClampToEdgeWrapping;
+    tex.encoding=THREE.sRGBEncoding;
+    tex.anisotropy = renderer ? renderer.capabilities.getMaxAnisotropy() : 1;
+    m.map=tex; m.needsUpdate=true; scheduleRebuild();
+  }, undefined, ()=>{ /* keep procedural fallback */ });
+  return m;
+}
+
+function initScene(){
+  scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x1b1e24);
+
+  camera=new THREE.PerspectiveCamera(55, window.innerWidth/window.innerHeight, 0.02, 200);
+  renderer=new THREE.WebGLRenderer({antialias:true});
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+  renderer.shadowMap.enabled=true;
+  renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+  renderer.outputEncoding=THREE.sRGBEncoding;
+  renderer.toneMapping=THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure=1.05;
+  document.body.prepend(renderer.domElement);
+
+  scene.add(new THREE.AmbientLight(0xffffff,0.55));
+  scene.add(new THREE.HemisphereLight(0xffffff,0x404048,0.45));
+  sunLight=new THREE.DirectionalLight(0xfff3e0,0.85);
+  sunLight.position.set(3,6,4); sunLight.castShadow=true;
+  sunLight.shadow.mapSize.set(2048,2048);
+  sunLight.shadow.camera.left=-6; sunLight.shadow.camera.right=6;
+  sunLight.shadow.camera.top=6; sunLight.shadow.camera.bottom=-6;
+  sunLight.shadow.camera.near=0.1; sunLight.shadow.camera.far=30;
+  sunLight.shadow.bias=-0.0005;
+  scene.add(sunLight); scene.add(sunLight.target);
+
+  // Kalina Gris photographic materials (with procedural fallbacks)
+  photoMat = {
+    floor: loadTile('tiles/kalina_gris_floor.jpg', concreteCanvas('#cfcfca')),
+    wall:  loadTile('tiles/kalina_gris_wall.jpg',  concreteCanvas('#d6d6d1')),
+    patch: loadTile('tiles/kalina_gris_decor.jpg', decorCanvas()),
+    olas:  loadTile('tiles/kalina_olas_gris_decor.jpg', waveCanvas())
+  };
+  const mk=(tex)=>{ tex.wrapS=tex.wrapT=THREE.ClampToEdgeWrapping; tex.encoding=THREE.sRGBEncoding;
+    return new THREE.MeshStandardMaterial({map:tex, roughness:0.6, side:THREE.DoubleSide}); };
+  colorMat = {
+    floor: mk(concreteCanvas('#cbcbc6')),
+    wall:  mk(concreteCanvas('#d8d8d3')),
+    patch: mk(decorCanvas()),
+    olas:  mk(waveCanvas())
+  };
+
+  groutMat       = new THREE.MeshStandardMaterial({color:0x3c3f43, roughness:0.95, side:THREE.DoubleSide});
+  plainAccentMat = new THREE.MeshStandardMaterial({color:0x6b7075, roughness:0.6,  side:THREE.DoubleSide});
+  doorMat        = new THREE.MeshStandardMaterial({color:0xe6e1d8, roughness:0.7,  side:THREE.DoubleSide});
+  frameMat       = new THREE.MeshStandardMaterial({color:0xf2efe9, roughness:0.6});
+  screedMat      = new THREE.MeshStandardMaterial({color:0x2a2c30, roughness:1.0,  side:THREE.DoubleSide});
+
+  groupNames.forEach(n=>{ groups[n]=new THREE.Group(); scene.add(groups[n]); });
+
+  window.addEventListener('resize',()=>{
+    camera.aspect=window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+}
+
+function decorMat(idx){
+  if(idx===2) return plainAccentMat;
+  return idx===1 ? MAT.olas : MAT.patch;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ORBIT CONTROLS
+// ═══════════════════════════════════════════════════════════════
+const orbit={theta:Math.PI*0.62, phi:Math.PI*0.36, radius:6, target:null};
+let dragging=false, dragBtn=-1, lastM={x:0,y:0}, pinchDist=0;
+
+function initControls(){
+  orbit.target=new THREE.Vector3(0,1.2,0);
+  updateCam();
+  const el=renderer.domElement;
+  el.addEventListener('mousedown',e=>{ dragging=true; dragBtn=e.button; lastM={x:e.clientX,y:e.clientY}; });
+  el.addEventListener('mousemove',e=>{
+    if(!dragging) return;
+    const dx=e.clientX-lastM.x, dy=e.clientY-lastM.y;
+    if(dragBtn===0){
+      orbit.theta-=dx*0.005;
+      orbit.phi=Math.max(0.02,Math.min(Math.PI*0.98, orbit.phi-dy*0.005));
+    } else if(dragBtn===2){
+      const ps=0.0025*orbit.radius;
+      const fwd=new THREE.Vector3().subVectors(orbit.target,camera.position).normalize();
+      const rt=new THREE.Vector3().crossVectors(fwd,camera.up).normalize();
+      const up=new THREE.Vector3().crossVectors(rt,fwd).normalize();
+      orbit.target.add(rt.multiplyScalar(-dx*ps));
+      orbit.target.add(up.multiplyScalar(dy*ps));
+    }
+    lastM={x:e.clientX,y:e.clientY}; updateCam();
+  });
+  el.addEventListener('mouseup',()=>dragging=false);
+  el.addEventListener('mouseleave',()=>dragging=false);
+  el.addEventListener('wheel',e=>{ orbit.radius*=1+e.deltaY*0.001; orbit.radius=Math.max(0.8,Math.min(40,orbit.radius)); updateCam(); });
+  el.addEventListener('contextmenu',e=>e.preventDefault());
+  el.addEventListener('touchstart',e=>{
+    if(e.touches.length===1){ dragging=true; dragBtn=0; lastM={x:e.touches[0].clientX,y:e.touches[0].clientY}; }
+    else if(e.touches.length===2){ pinchDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY); }
+  });
+  el.addEventListener('touchmove',e=>{
+    e.preventDefault();
+    if(e.touches.length===1&&dragging){
+      const dx=e.touches[0].clientX-lastM.x, dy=e.touches[0].clientY-lastM.y;
+      orbit.theta-=dx*0.005; orbit.phi=Math.max(0.02,Math.min(Math.PI*0.98,orbit.phi-dy*0.005));
+      lastM={x:e.touches[0].clientX,y:e.touches[0].clientY}; updateCam();
+    } else if(e.touches.length===2){
+      const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX, e.touches[0].clientY-e.touches[1].clientY);
+      orbit.radius*=pinchDist/d; orbit.radius=Math.max(0.8,Math.min(40,orbit.radius)); pinchDist=d; updateCam();
+    }
+  },{passive:false});
+  el.addEventListener('touchend',()=>dragging=false);
+}
+function updateCam(){
+  const {radius,theta,phi,target}=orbit;
+  camera.position.set(
+    target.x+radius*Math.sin(phi)*Math.cos(theta),
+    target.y+radius*Math.cos(phi),
+    target.z+radius*Math.sin(phi)*Math.sin(theta));
+  camera.lookAt(target);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GEOMETRY PRIMITIVES & TILING UTILITIES
+// ═══════════════════════════════════════════════════════════════
+function clearGroup(n){
+  const g=groups[n];
+  while(g.children.length){ const c=g.children[0]; if(c.geometry) c.geometry.dispose(); g.remove(c); }
+}
+
+// Build a flat convex polygon (fan-triangulated) with explicit UVs.
+// pts: [[x,y,z],...]  uvs: [[u,v],...]  (same length, ordered around the polygon)
+let tileCount=0;
+function poly(group, mat, pts, uvs){
+  const n=pts.length; if(n<3) return;
+  const pos=[], uv=[];
+  for(let i=1;i<n-1;i++){
+    for(const k of [0,i,i+1]){ pos.push(pts[k][0],pts[k][1],pts[k][2]); uv.push(uvs[k][0],uvs[k][1]); }
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv,2));
+  g.computeVertexNormals();
+  const m=new THREE.Mesh(g,mat); m.castShadow=false; m.receiveShadow=true;
+  group.add(m); tileCount++;
+}
+
+// ---- Room polygon (rectangle, or L-shape with a corner notch) ----
+// Returns CCW list of {x,z}. Corner index: 0:(-,-) 1:(+,-) 2:(+,+) 3:(-,+).
+function roomPolygon(R){
+  const W=R.width, D=R.depth;
+  const base=[{x:-W/2,z:-D/2},{x:W/2,z:-D/2},{x:W/2,z:D/2},{x:-W/2,z:D/2}];
+  const nw=R.notchWidth, nd=R.notchDepth;
+  if(nw<=0 || nd<=0) return base;
+  const k=((R.notchCorner|0)%4+4)%4;
+  const c=base[k]; const sx=Math.sign(c.x)||1, sz=Math.sign(c.z)||1;
+  const a ={x:c.x,         z:c.z - sz*nd};
+  const b ={x:c.x - sx*nw, z:c.z - sz*nd};
+  const c2={x:c.x - sx*nw, z:c.z};
+  const out=[];
+  base.forEach((p,i)=>{ if(i===k){ out.push(a,b,c2); } else out.push(p); });
+  return out;
+}
+
+// Floor region as axis-aligned rectangles {x0,x1,z0,z1}. One rect, or two for an L.
+function floorRects(R){
+  const W=R.width, D=R.depth, nw=R.notchWidth, nd=R.notchDepth;
+  const full={x0:-W/2,x1:W/2,z0:-D/2,z1:D/2};
+  if(nw<=0||nd<=0) return [full];
+  const k=((R.notchCorner|0)%4+4)%4;
+  const corners=[{x:-W/2,z:-D/2},{x:W/2,z:-D/2},{x:W/2,z:D/2},{x:-W/2,z:D/2}];
+  const c=corners[k], sx=Math.sign(c.x)||1, sz=Math.sign(c.z)||1;
+  // R1: full width, the (D-nd) slab on the side away from the notch's z-end
+  const R1 = sz>0 ? {x0:-W/2,x1:W/2,z0:-D/2,z1:D/2-nd}
+                  : {x0:-W/2,x1:W/2,z0:-D/2+nd,z1:D/2};
+  // R2: the nd-deep strip at the notch z-end, full width minus the nw notch
+  const z2 = sz>0 ? {z0:D/2-nd,z1:D/2} : {z0:-D/2,z1:-D/2+nd};
+  const x2 = sx>0 ? {x0:-W/2,x1:W/2-nw} : {x0:-W/2+nw,x1:W/2};
+  const R2 = {x0:x2.x0,x1:x2.x1,z0:z2.z0,z1:z2.z1};
+  return [R1,R2];
+}
+
+function cardinalOf(nx,nz){
+  if(Math.abs(nx)>=Math.abs(nz)) return nx>0?'E':'W';
+  return nz>0?'N':'S';
+}
+
+// Sutherland–Hodgman clip of a 2D polygon (array of [x,z]) to an axis rect.
+function clipToRect(pts, r){
+  const clip=(p,axis,val,keepGreater)=>{
+    const out=[]; const n=p.length;
+    for(let i=0;i<n;i++){
+      const cur=p[i], nx=p[(i+1)%n];
+      const cIn=keepGreater?cur[axis]>=val:cur[axis]<=val;
+      const nIn=keepGreater?nx[axis]>=val:nx[axis]<=val;
+      if(cIn) out.push(cur);
+      if(cIn!==nIn){
+        const t=(val-cur[axis])/(nx[axis]-cur[axis]);
+        out.push([cur[0]+t*(nx[0]-cur[0]), cur[1]+t*(nx[1]-cur[1])]);
+      }
+    }
+    return out;
+  };
+  let p=pts;
+  p=clip(p,0,r.x0,true);  if(p.length<3) return p;
+  p=clip(p,0,r.x1,false); if(p.length<3) return p;
+  p=clip(p,1,r.z0,true);  if(p.length<3) return p;
+  p=clip(p,1,r.z1,false);
+  return p;
+}
+
+// rect a minus rect b -> up to 4 rects (a,b in {x0,x1,y0,y1})
+function rectSubtract(a,b){
+  const ox0=Math.max(a.x0,b.x0), ox1=Math.min(a.x1,b.x1);
+  const oy0=Math.max(a.y0,b.y0), oy1=Math.min(a.y1,b.y1);
+  if(ox0>=ox1||oy0>=oy1) return [a];                 // no overlap
+  const out=[];
+  if(a.y1>oy1) out.push({x0:a.x0,x1:a.x1,y0:oy1,y1:a.y1}); // top
+  if(a.y0<oy0) out.push({x0:a.x0,x1:a.x1,y0:a.y0,y1:oy0}); // bottom
+  if(a.x0<ox0) out.push({x0:a.x0,x1:ox0,y0:oy0,y1:oy1});   // left
+  if(a.x1>ox1) out.push({x0:ox1,x1:a.x1,y0:oy0,y1:oy1});   // right
+  return out;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FLOOR TILING
+// ═══════════════════════════════════════════════════════════════
+function buildFloorTiles(B){
+  const F=B.floor, R=B.room;
+  const tw=Math.max(0.02,F.tileW), th=Math.max(0.02,F.tileH), g=Math.max(0,F.grout);
+  const ang=F.angle*Math.PI/180, cs=Math.cos(ang), sn=Math.sin(ang);
+  const e1=[cs,sn], e2=[-sn,cs];          // orthonormal grid basis in (x,z)
+  const px=tw+g, py=th+g;
+  const Y=0.004;
+  const rects=floorRects(R);
+
+  // screed (dark base showing through grout) — one quad per region rect
+  rects.forEach(r=>{
+    poly(groups.base, screedMat,
+      [[r.x0,0.0,r.z0],[r.x1,0.0,r.z0],[r.x1,0.0,r.z1],[r.x0,0.0,r.z1]],
+      [[0,0],[1,0],[1,1],[0,1]]);
+  });
+
+  rects.forEach(r=>{
+    // grid-coord bbox of this rect's 4 corners
+    const cor=[[r.x0,r.z0],[r.x1,r.z0],[r.x1,r.z1],[r.x0,r.z1]];
+    let guMin=1e9,guMax=-1e9,gvMin=1e9,gvMax=-1e9;
+    cor.forEach(p=>{ const gu=p[0]*e1[0]+p[1]*e1[1], gv=p[0]*e2[0]+p[1]*e2[1];
+      guMin=Math.min(guMin,gu); guMax=Math.max(guMax,gu); gvMin=Math.min(gvMin,gv); gvMax=Math.max(gvMax,gv); });
+    const iMin=Math.floor((guMin-F.offsetX)/px)-1, iMax=Math.ceil((guMax-F.offsetX)/px)+1;
+    const jMin=Math.floor((gvMin-F.offsetY)/py)-1, jMax=Math.ceil((gvMax-F.offsetY)/py)+1;
+    for(let i=iMin;i<=iMax;i++){
+      for(let j=jMin;j<=jMax;j++){
+        const gu0=F.offsetX+i*px, gv0=F.offsetY+j*py;   // tile origin (grout-excluded)
+        const gu1=gu0+tw, gv1=gv0+th;
+        const quad=[[gu0,gv0],[gu1,gv0],[gu1,gv1],[gu0,gv1]].map(gp=>{
+          const x=gp[0]*e1[0]+gp[1]*e2[0], z=gp[0]*e1[1]+gp[1]*e2[1]; return [x,z];
+        });
+        const cl=clipToRect(quad,r);
+        if(cl.length<3) continue;
+        const pts=cl.map(p=>[p[0],Y,p[1]]);
+        const uvs=cl.map(p=>{ const gu=p[0]*e1[0]+p[1]*e1[1], gv=p[0]*e2[0]+p[1]*e2[1];
+          return [(gu-gu0)/tw, 1-(gv-gv0)/th]; });
+        poly(groups.floor, MAT.floor, pts, uvs);
+      }
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WALL TILING
+// ═══════════════════════════════════════════════════════════════
+// One polygon edge p0->p1 (floor level), outward normal n, height H.
+// mode '3d' => tiles rise vertically; 'unfold' => fold flat outward.
+function buildWall(edge, H, wc, doorRect, mode){
+  const p0=edge.p0, p1=edge.p1, n=edge.n;
+  const ax=p1.x-p0.x, az=p1.z-p0.z, L=Math.hypot(ax,az);
+  if(L<1e-4) return;
+  const a={x:ax/L, z:az/L};                 // along-wall unit
+  const inward={x:-n.x, y:0, z:-n.z};       // tile faces into the room (3D)
+  // map wall-space (u,v) -> world position
+  const toWorld=(u,v)=>{
+    const bx=p0.x+a.x*u, bz=p0.z+a.z*u;
+    if(mode==='unfold') return [bx + n.x*v, 0.006, bz + n.z*v];
+    return [bx + inward.x*0.006, v, bz + inward.z*0.006];
+  };
+
+  let tw=Math.max(0.04,wc.tileW), th=Math.max(0.04,wc.tileH);
+  if(wc.orient===1){ const t=tw; tw=th; th=t; }
+  const g=Math.max(0,wc.grout), px=tw+g, py=th+g;
+
+  // ---- wall backing (grout colour) = wall rect minus door ----
+  let backing=[{x0:0,x1:L,y0:0,y1:H}];
+  if(doorRect) backing=rectSubtract(backing[0],doorRect);
+  const backOff=0.004;
+  backing.forEach(r=>{
+    const off = mode==='unfold' ? null : 1;
+    const pts=[[r.x0,r.y0],[r.x1,r.y0],[r.x1,r.y1],[r.x0,r.y1]].map(q=>{
+      const w=toWorld(q[0],q[1]);
+      // push backing slightly behind tiles
+      if(mode==='unfold') return [w[0], 0.001, w[2]];
+      return [w[0]-inward.x*backOff, w[1], w[2]-inward.z*backOff];
+    });
+    poly(groups.base, groutMat, pts, [[0,0],[1,0],[1,1],[0,1]]);
+  });
+
+  // ---- band vertical range ----
+  const bandRows=wc.bandRows|0;
+  const bandHalf=bandRows>0 ? (bandRows*py)/2 + 1e-4 : 0;
+  const isAccent = (wc.accent|0)>0;
+  const accMat = isAccent ? decorMat(wc.accent-1) : null;
+
+  // ---- tiles ----
+  const iMax=Math.ceil((L-wc.offsetX)/px)+1;
+  const jMax=Math.ceil((H-wc.offsetY)/py)+1;
+  for(let j=-1;j<=jMax;j++){
+    const v0=wc.offsetY+j*py, v1=v0+th, vc=(v0+v1)/2;
+    const rowShift=(wc.bond===1 && (((j%2)+2)%2)===1) ? px/2 : 0;
+    let mat=MAT.wall;
+    if(isAccent) mat=accMat;
+    else if(bandRows>0 && Math.abs(vc-wc.bandHeight)<=bandHalf) mat=decorMat(wc.bandTile);
+    for(let i=-1;i<=iMax;i++){
+      const u0=wc.offsetX-rowShift+i*px, u1=u0+tw;
+      // clip tile to wall bounds
+      let rect={x0:Math.max(0,u0), x1:Math.min(L,u1), y0:Math.max(0,v0), y1:Math.min(H,v1)};
+      if(rect.x0>=rect.x1||rect.y0>=rect.y1) continue;
+      const parts = doorRect ? rectSubtract(rect, {x0:doorRect.x0,x1:doorRect.x1,y0:doorRect.y0,y1:doorRect.y1}) : [rect];
+      parts.forEach(pr=>{
+        if(pr.x0>=pr.x1||pr.y0>=pr.y1) return;
+        const pts=[[pr.x0,pr.y0],[pr.x1,pr.y0],[pr.x1,pr.y1],[pr.x0,pr.y1]].map(q=>toWorld(q[0],q[1]));
+        const uvs=[[pr.x0,pr.y0],[pr.x1,pr.y0],[pr.x1,pr.y1],[pr.x0,pr.y1]].map(q=>
+          [ (q[0]-u0)/tw, (q[1]-v0)/th ]);
+        poly(groups.walls, mat, pts, uvs);
+      });
+    }
+  }
+
+  // ---- door leaf + frame (3D only; in unfold leave the opening) ----
+  if(doorRect){
+    const dl=doorRect;
+    if(mode!=='unfold'){
+      // recessed door leaf
+      const leaf=[[dl.x0,dl.y0],[dl.x1,dl.y0],[dl.x1,dl.y1],[dl.x0,dl.y1]].map(q=>{
+        const w=toWorld(q[0],q[1]); return [w[0]+inward.x*0.05, w[1], w[2]+inward.z*0.05];
+      });
+      poly(groups.trim, doorMat, leaf, [[0,0],[1,0],[1,1],[0,1]]);
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ROOM ASSEMBLY
+// ═══════════════════════════════════════════════════════════════
+function buildRoom(){
+  ['floor','walls','trim','base'].forEach(clearGroup);
+  tileCount=0;
+  const B=CONFIG[CONFIG.active];
+  const R=B.room, mode=CONFIG.view;
+  MAT = CONFIG.texture ? photoMat : colorMat;
+
+  buildFloorTiles(B);
+
+  // build edges from polygon, classify by cardinal, find door edge
+  const poly2=roomPolygon(R);
+  const cen={x:0,z:0}; poly2.forEach(p=>{cen.x+=p.x;cen.z+=p.z;}); cen.x/=poly2.length; cen.z/=poly2.length;
+  const edges=[];
+  for(let i=0;i<poly2.length;i++){
+    const p0=poly2[i], p1=poly2[(i+1)%poly2.length];
+    const dx=p1.x-p0.x, dz=p1.z-p0.z, len=Math.hypot(dx,dz);
+    if(len<1e-4) continue;
+    let nx=dz/len, nz=-dx/len;                          // right normal (CCW => outward)
+    const mx=(p0.x+p1.x)/2-cen.x, mz=(p0.z+p1.z)/2-cen.z;
+    if(nx*mx+nz*mz<0){ nx=-nx; nz=-nz; }                // ensure it points outward
+    edges.push({p0,p1,len,n:{x:nx,z:nz},card:cardinalOf(nx,nz)});
+  }
+  // choose the door edge = longest edge of the requested cardinal
+  const doorCard=CARDINALS[((B.door.wall|0)%4+4)%4];
+  let doorEdge=null;
+  edges.forEach(e=>{ if(e.card===doorCard && (!doorEdge||e.len>doorEdge.len)) doorEdge=e; });
+
+  edges.forEach(e=>{
+    const wc=B.walls[e.card];
+    let dr=null;
+    if(e===doorEdge){
+      const dw=Math.min(B.door.width, e.len-0.02);
+      const cx=B.door.position*e.len;
+      let x0=cx-dw/2, x1=cx+dw/2;
+      if(x0<0.01){x0=0.01;x1=x0+dw;} if(x1>e.len-0.01){x1=e.len-0.01;x0=x1-dw;}
+      dr={x0,x1,y0:0,y1:Math.min(B.door.height,R.height)};
+    }
+    buildWall(e, R.height, wc, dr, mode);
+  });
+
+  updateStats(B);
+}
+
+function updateStats(B){
+  const R=B.room;
+  let area=R.width*R.depth;
+  if(R.notchWidth>0&&R.notchDepth>0) area-=R.notchWidth*R.notchDepth;
+  const name = CONFIG.active==='A'?'Bathroom A (rectangular)':'Bathroom B (notched)';
+  document.getElementById('stats').textContent =
+    `${name}\n${R.width.toFixed(2)} × ${R.depth.toFixed(2)} m  ·  H ${R.height.toFixed(2)} m`+
+    `\nFloor area ≈ ${area.toFixed(2)} m²   ·   ${tileCount} tiles`+
+    `\nView: ${CONFIG.view==='3d'?'3D room':'Unfolded 2D'}   ·   ${CONFIG.texture?'Kalina Gris':'flat colour'}`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// REBUILD + CAMERA FRAMING
+// ═══════════════════════════════════════════════════════════════
+function rebuildModel(){ buildRoom(); }
+let rebuildTimer;
+function scheduleRebuild(){ clearTimeout(rebuildTimer); rebuildTimer=setTimeout(rebuildModel,60); }
+
+function frameCamera(){
+  const B=CONFIG[CONFIG.active], R=B.room;
+  if(CONFIG.view==='unfold'){
+    const ext=Math.max(R.width,R.depth)+2*R.height;
+    orbit.target.set(0,0,0);
+    orbit.phi=0.02; orbit.theta=Math.PI*1.5; orbit.radius=ext*1.15;
+  } else {
+    orbit.target.set(0, R.height*0.45, 0);
+    orbit.phi=Math.PI*0.40; orbit.theta=Math.PI*0.62;
+    orbit.radius=Math.max(R.width,R.depth)*1.25 + R.height*0.6;
+  }
+  updateCam();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GUI SCHEMA (built programmatically so the 4 walls stay DRY)
+// ═══════════════════════════════════════════════════════════════
+function buildSchema(tab){
+  const p=tab+'.';
+  const isB = tab==='B';
+  const roomControls=[
+    {k:p+'room.width',  l:'Width X (m)', mn:1.0, mx:5.0, s:0.05},
+    {k:p+'room.depth',  l:'Depth Z (m)', mn:1.0, mx:6.0, s:0.05},
+    {k:p+'room.height', l:'Height (m)',  mn:2.0, mx:3.2, s:0.05}
+  ];
+  if(isB){
+    roomControls.push(
+      {k:p+'room.notchCorner', l:'Notch corner', type:'select', options:['Front-left','Front-right','Back-right','Back-left']},
+      {k:p+'room.notchWidth',  l:'Notch W (m)',  mn:0.0, mx:2.5, s:0.05},
+      {k:p+'room.notchDepth',  l:'Notch D (m)',  mn:0.0, mx:2.5, s:0.05}
+    );
+  }
+  const schema=[
+    {section:'Room', open:true, controls:roomControls},
+    {section:'Door', open:true, controls:[
+      {k:p+'door.wall',     l:'On wall',     type:'select', options:DOOR_WALL_NAMES},
+      {k:p+'door.position', l:'Position',    mn:0.05, mx:0.95, s:0.01},
+      {k:p+'door.width',    l:'Width (m)',   mn:0.5,  mx:1.2,  s:0.05},
+      {k:p+'door.height',   l:'Height (m)',  mn:1.8,  mx:2.4,  s:0.05}
+    ]},
+    {section:'Floor tiles', open:true, controls:[
+      {k:p+'floor.tileW',   l:'Tile W (m)',  mn:0.05, mx:1.2, s:0.005},
+      {k:p+'floor.tileH',   l:'Tile H (m)',  mn:0.05, mx:1.2, s:0.005},
+      {k:p+'floor.grout',   l:'Grout (m)',   mn:0.0,  mx:0.02,s:0.001},
+      {k:p+'floor.angle',   l:'Angle (°)',   mn:0,    mx:90,  s:1},
+      {k:p+'floor.offsetX', l:'Start X (m)', mn:-0.6, mx:0.6, s:0.01},
+      {k:p+'floor.offsetY', l:'Start Z (m)', mn:-0.6, mx:0.6, s:0.01}
+    ]}
+  ];
+  CARDINALS.forEach(c=>{
+    const w=p+'walls.'+c+'.';
+    schema.push({section:'Wall '+c+' '+({N:'(back)',E:'(right)',S:'(front)',W:'(left)'}[c]), open:false, controls:[
+      {k:w+'tileW',  l:'Tile W (m)',  mn:0.05, mx:1.2, s:0.005},
+      {k:w+'tileH',  l:'Tile H (m)',  mn:0.05, mx:1.2, s:0.005},
+      {k:w+'orient', l:'Orientation', type:'select', options:['Horizontal','Vertical (90°)']},
+      {k:w+'bond',   l:'Layout',      type:'select', options:['Stacked grid','Brick offset']},
+      {k:w+'grout',  l:'Grout (m)',   mn:0.0,  mx:0.02,s:0.001},
+      {k:w+'offsetX',l:'Start X (m)', mn:-0.6, mx:0.6, s:0.01},
+      {k:w+'offsetY',l:'Start Y (m)', mn:-0.6, mx:0.6, s:0.01},
+      {k:w+'bandRows',  l:'Effect rows', type:'select', options:['Off','1 row','2 rows']},
+      {k:w+'bandTile',  l:'Effect tile', type:'select', options:DECOR_NAMES},
+      {k:w+'bandHeight',l:'Effect H (m)',mn:0.0, mx:3.2, s:0.05},
+      {k:w+'accent',    l:'Accent wall', type:'select', options:['Off','Patchwork','Olas wave','Plain']}
+    ]});
+  });
+  schema.push({section:'Display', open:false, controls:[
+    {k:'texture', l:'Texture', type:'select', options:['Flat colour','Kalina Gris photos']}
+  ]});
+  return schema;
+}
+
+function createGUI(){
+  const container=document.getElementById('gui-sections');
+  container.innerHTML='';
+  const schema=buildSchema(CONFIG.active);
+  schema.forEach(sec=>{
+    const div=document.createElement('div');
+    div.className='gs'+(sec.open?' open':'');
+    let html=`<div class="gh" onclick="this.parentElement.classList.toggle('open')"><span>${sec.section}</span><span class="ar">▶</span></div><div class="gb">`;
+    sec.controls.forEach(ctrl=>{
+      if(ctrl.type==='select'){
+        const val=cfgGet(ctrl.k); const id=ctrl.k.replace(/\./g,'_');
+        const opts=ctrl.options.map((o,i)=>`<option value="${i}"${i===Math.round(val)?' selected':''}>${o}</option>`).join('');
+        html+=`<div class="gr"><label>${ctrl.l}</label><select class="gs-sel" id="s_${id}" onchange="onSelect('${ctrl.k}',this.value)">${opts}</select></div>`;
+      } else {
+        const val=cfgGet(ctrl.k);
+        const dec=ctrl.s<0.01?3:ctrl.s<0.1?2:ctrl.s>=1?0:1;
+        const id=ctrl.k.replace(/\./g,'_');
+        html+=`<div class="gr"><label>${ctrl.l}</label>
+          <input type="range" id="r_${id}" min="${ctrl.mn}" max="${ctrl.mx}" step="${ctrl.s}" value="${val}"
+            oninput="onSlider('${ctrl.k}','${id}',this.value,${dec})">
+          <input type="text" class="gv" id="v_${id}" value="${val.toFixed(dec)}"
+            onchange="onValue('${ctrl.k}','${id}',this.value,${dec})"
+            onkeydown="if(event.key==='Enter')this.blur()"></div>`;
+      }
+    });
+    html+='</div>'; div.innerHTML=html; container.appendChild(div);
+  });
+}
+
+window.onSlider=function(key,id,val,dec){
+  val=parseFloat(val); cfgSet(key,val);
+  document.getElementById('v_'+id).value=val.toFixed(dec);
+  scheduleRebuild();
+};
+window.onValue=function(key,id,val,dec){
+  val=parseFloat(val); if(isNaN(val)) return; cfgSet(key,val);
+  document.getElementById('r_'+id).value=val;
+  document.getElementById('v_'+id).value=val.toFixed(dec);
+  scheduleRebuild();
+};
+window.onSelect=function(key,val){ cfgSet(key,parseInt(val,10)); scheduleRebuild(); };
+window.toggleGUI=function(){
+  document.getElementById('gui').classList.toggle('collapsed');
+  document.getElementById('toggle').classList.toggle('collapsed');
+};
+window.switchTab=function(tab){
+  if(tab===CONFIG.active) return;
+  CONFIG.active=tab;
+  ['A','B'].forEach(t=>document.getElementById('tab_'+t).classList.toggle('active',t===tab));
+  createGUI(); rebuildModel(); frameCamera();
+};
+window.switchView=function(v){
+  if(v===CONFIG.view) return;
+  CONFIG.view=v;
+  document.getElementById('view_3d').classList.toggle('active',v==='3d');
+  document.getElementById('view_unfold').classList.toggle('active',v==='unfold');
+  rebuildModel(); frameCamera();
+};
+
+// ═══════════════════════════════════════════════════════════════
+function animate(){ requestAnimationFrame(animate); renderer.render(scene,camera); }
+
+initScene();
+initControls();
+createGUI();
+rebuildModel();
+frameCamera();
+animate();
+</script>
+</body>
+</html>
