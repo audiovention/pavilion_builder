@@ -488,7 +488,7 @@ function buildFloorTiles(B){
 // mode '3d' => tiles rise vertically; 'unfold' => fold flat outward.
 // All geometry is added to `g` (a per-wall sub-group, so the wall can be
 // hidden as a unit for the doll-house interior view).
-function buildWall(g, edge, H, wc, doorRect, mode){
+function buildWall(grp, edge, H, wc, doorRect, mode){
   const p0=edge.p0, p1=edge.p1, n=edge.n;
   const ax=p1.x-p0.x, az=p1.z-p0.z, L=Math.hypot(ax,az);
   if(L<1e-4) return;
@@ -517,7 +517,7 @@ function buildWall(g, edge, H, wc, doorRect, mode){
       if(mode==='unfold') return [w[0], 0.001, w[2]];
       return [w[0]-inward.x*backOff, w[1], w[2]-inward.z*backOff];
     });
-    poly(g, groutMat, pts, [[0,0],[1,0],[1,1],[0,1]]);
+    poly(grp, groutMat, pts, [[0,0],[1,0],[1,1],[0,1]]);
   });
 
   // ---- band vertical range ----
@@ -546,7 +546,7 @@ function buildWall(g, edge, H, wc, doorRect, mode){
         const pts=[[pr.x0,pr.y0],[pr.x1,pr.y0],[pr.x1,pr.y1],[pr.x0,pr.y1]].map(q=>toWorld(q[0],q[1]));
         const uvs=[[pr.x0,pr.y0],[pr.x1,pr.y0],[pr.x1,pr.y1],[pr.x0,pr.y1]].map(q=>
           [ (q[0]-u0)/tw, (q[1]-v0)/th ]);
-        poly(g, mat, pts, uvs);
+        poly(grp, mat, pts, uvs);
       });
     }
   }
@@ -559,7 +559,7 @@ function buildWall(g, edge, H, wc, doorRect, mode){
       const leaf=[[dl.x0,dl.y0],[dl.x1,dl.y0],[dl.x1,dl.y1],[dl.x0,dl.y1]].map(q=>{
         const w=toWorld(q[0],q[1]); return [w[0]+inward.x*0.05, w[1], w[2]+inward.z*0.05];
       });
-      poly(g, doorMat, leaf, [[0,0],[1,0],[1,1],[0,1]]);
+      poly(grp, doorMat, leaf, [[0,0],[1,0],[1,1],[0,1]]);
     }
   }
 }
