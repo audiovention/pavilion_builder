@@ -49,6 +49,17 @@ canvas{display:block}
   padding:3px 6px;outline:none;cursor:pointer}
 .gs-sel:focus{border-color:#4a9eff}
 .gs-sel option{background:#1e1e1e;color:#4a9eff}
+.gbtn{width:100%;margin-top:6px;padding:7px 0;background:rgba(255,255,255,0.05);
+  border:1px solid rgba(255,255,255,0.12);border-radius:5px;color:#bbb;font-size:11px;
+  font-weight:600;letter-spacing:.5px;text-transform:uppercase;cursor:pointer;transition:background .15s,color .15s}
+.gbtn:hover{background:rgba(255,255,255,0.09);color:#fff}
+.gbtn.danger{border-color:rgba(255,90,90,0.4);color:#ff7a7a}
+.gbtn.danger:hover{background:rgba(255,90,90,0.15)}
+.palette{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
+.palbtn{flex:1 1 calc(33% - 4px);background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);
+  border-radius:4px;color:#999;font-size:11px;padding:6px 0;cursor:pointer;transition:background .15s,color .15s,border-color .15s}
+.palbtn:hover{background:rgba(255,255,255,0.08);color:#ccc}
+.palbtn.active{background:rgba(74,158,255,0.18);border-color:rgba(74,158,255,0.6);color:#4a9eff}
 #info{position:fixed;bottom:8px;left:10px;font-size:11px;color:rgba(255,255,255,0.35);z-index:100}
 #stats{position:fixed;top:8px;left:10px;font-size:11px;color:rgba(255,255,255,0.5);z-index:100;
   background:rgba(0,0,0,0.5);padding:6px 10px;border-radius:4px}
@@ -65,6 +76,7 @@ canvas{display:block}
   <div class="tabs">
     <button class="tab active" id="tab_pavilion" onclick="switchTab('pavilion')">Pavilion</button>
     <button class="tab" id="tab_kitchen" onclick="switchTab('kitchen')">Kitchen</button>
+    <button class="tab" id="tab_landscape" onclick="switchTab('landscape')">Site</button>
   </div>
   <div id="gui-sections"></div>
 </div>
@@ -190,6 +202,17 @@ const CONFIG = {
     hour: 15,           // 0-24 (decimal), 10am default
     latitude: 43.4331,  // degrees N, default = Bulgaria
     orientation: 265    // degrees, pavilion rotation — 0 = long axis (X) points East
+  },
+  site: {
+    // Real plot (cadastral parcel 1031) — used by the Landscape tab.
+    // Long axis (depth, ~42m) runs along Z; street/north is at -Z.
+    plotWidth: 29,        // E-W extent (m)
+    plotDepth: 42,        // N-S extent (m)
+    pavX: 0,              // pavilion placement on plot, plot-local X (m)
+    pavZ: 4,              // plot-local Z (m) — slightly south of centre (open area)
+    pavRot: 0,            // pavilion yaw on the plot (degrees)
+    showBuildings: 1,     // show existing buildings
+    showExistingTrees: 1  // show the default (existing) trees
   }
 };
 
@@ -354,8 +377,79 @@ const GUI_SCHEMA = [
     {k:'kitchen',    l:'Kitchen',     type:'checkbox'},
     {k:'fence',      l:'Fence',       type:'checkbox'},
     {k:'furniture',  l:'Furniture',   type:'checkbox'}
+  ]},
+  // ── Landscape / Site tab ──
+  { section:'Plot', tab:'landscape', open:true, controls:[
+    {k:'site.plotWidth', l:'Width E-W (m)', mn:10, mx:60, s:0.5},
+    {k:'site.plotDepth', l:'Depth N-S (m)', mn:10, mx:80, s:0.5}
+  ]},
+  { section:'Pavilion Placement', tab:'landscape', open:true, controls:[
+    {k:'site.pavX',   l:'Position X (m)', mn:-14, mx:14,  s:0.25},
+    {k:'site.pavZ',   l:'Position Z (m)', mn:-20, mx:20,  s:0.25},
+    {k:'site.pavRot', l:'Rotation (°)',   mn:0,   mx:360, s:5}
+  ]},
+  { section:'Plants', tab:'landscape', open:true, controls:[
+    {k:'__plantTool',      l:'Place',           type:'palette'},
+    {k:'__deleteSelected', l:'Delete selected', type:'button'},
+    {k:'__resetLandscape', l:'Reset to defaults', type:'button', danger:true}
+  ]},
+  { section:'Site Visibility', tab:'landscape', open:false, controls:[
+    {k:'site.showBuildings',     l:'Existing buildings', type:'sitecheck'},
+    {k:'site.showExistingTrees', l:'Existing trees',     type:'sitecheck'}
   ]}
 ];
+
+// ═══════════════════════════════════════════════════════════════
+// SITE / LANDSCAPE DATA — used by the Landscape tab
+// ═══════════════════════════════════════════════════════════════
+// All coordinates are PLOT-LOCAL: origin = plot centre, Y=0 = ground,
+// +X = east, +Z = south (street/north is at -Z). Approximated from the
+// satellite + cadastral images of parcel 1031 (~29m x 42m).
+
+// Existing buildings as simple massing boxes (footprint + low roof).
+const DEFAULT_BUILDINGS = [
+  // Existing house: red roof, near the north (street) edge, centre-left.
+  { id:'house',     x:-4.5, z:-15.5, w:10, d:8,  h:4.2, roof:'gable', roofColor:0xA0392B, wallColor:0xD8CDB8 },
+  // Structure at the south edge, centre.
+  { id:'south',     x:1.0,  z:18.5,  w:7,  d:5,  h:3.0, roof:'gable', roofColor:0x9a5a3a, wallColor:0xC8C0B0 },
+  // Neighbour massing just outside the east edge.
+  { id:'neighborE', x:17.5, z:-1.0,  w:7,  d:11, h:4.0, roof:'gable', roofColor:0x7a4a30, wallColor:0xCAC2B2 }
+];
+
+// Existing big trees (seeded into LANDSCAPE.plants on first load).
+const DEFAULT_PLANTS = [
+  { type:'tree_big', x:-6,  z:-8 },   // large canopy cluster centre-left
+  { type:'tree',     x:-11, z:-3 },   // west edge row
+  { type:'tree',     x:-12, z:4 },
+  { type:'tree',     x:-11, z:11 },
+  { type:'tree_big', x:11,  z:-5 },   // dense east cluster
+  { type:'tree',     x:12,  z:1 },
+  { type:'tree',     x:11,  z:7 },
+  { type:'tree',     x:-2,  z:15 },   // south-edge trees
+  { type:'tree',     x:5,   z:16 }
+];
+
+// Visual params per plant type. canopyR/height are defaults; a plant may
+// override them per-instance.
+const PLANT_TYPES = {
+  tree:     { label:'Tree',     trunkH:2.2, trunkR:0.18, canopyR:2.6, height:6.5, canopyColor:0x4f7a36, foliage:'sphere' },
+  tree_big: { label:'Big tree', trunkH:3.2, trunkR:0.32, canopyR:4.2, height:9.5, canopyColor:0x3f6a2e, foliage:'sphere' },
+  conifer:  { label:'Conifer',  trunkH:0.8, trunkR:0.16, canopyR:1.7, height:6.0, canopyColor:0x2f5a34, foliage:'cone3' },
+  bush:     { label:'Bush',     trunkH:0.15,trunkR:0.10, canopyR:0.8, height:1.1, canopyColor:0x567d3a, foliage:'blob' }
+};
+const PLANT_TOOLS = ['Off','tree','tree_big','conifer','bush'];
+
+// Mutable, localStorage-persisted source of truth for the landscape.
+const LANDSCAPE_VERSION = 1;
+let plantUidCounter = 0;
+let LANDSCAPE = { version: LANDSCAPE_VERSION, pav: { x:0, z:0, rot:0 }, plants: [] };
+
+function makeDefaultPlants() {
+  return DEFAULT_PLANTS.map(p => ({
+    uid: 'p' + (plantUidCounter++),
+    type: p.type, x: p.x, z: p.z, default: true
+  }));
+}
 
 // ═══════════════════════════════════════════════════════════════
 // HELPERS
@@ -526,10 +620,14 @@ let scene, camera, renderer;
 let sunLight;
 const groups = {};
 const dimGroups = {};
-const groupNames = ['furniture','foundation','pathways','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','kitchen','kitchenBricks','kitchenBackdrop','kitchenSlab','fence','ground','dims'];
+const groupNames = ['furniture','foundation','pathways','posts','beams','ridge','braces','rafters','roof','panelling','brickWall','kitchen','kitchenBricks','kitchenBackdrop','kitchenSlab','fence','ground','dims',
+  'site','siteGround','buildings','plants','siteHelpers'];
 let woodMat, concreteMat, roofMat, mortarMat, acaciaMat, cushionMat, metalMat, wickerMat, stoneMat, damagedStoneMat;
 let stainlessMat, stainlessDark, cabinetMat, counterMat, glassHobMat, hobMatteMat, hobBurnerMat, hobKnobMat,
     sinkNayaMat, sinkNayaBasin, sinkZiaMat, sinkZiaBasin, sinkEridanMat, sinkEridanBasin;
+// Landscape/site materials
+let trunkMat, dirtMat, streetMat, selectRingMat;
+const siteMatCache = {};  // colored matte materials, cached so clearGroup never leaks them
 let currentTab = 'pavilion';
 
 function initScene() {
@@ -624,8 +722,17 @@ function initScene() {
   sinkEridanMat  = new THREE.MeshStandardMaterial({ color: 0x3A3C40, metalness: 0.35, roughness: 0.55 });
   sinkEridanBasin= new THREE.MeshStandardMaterial({ color: 0x222428, metalness: 0.30, roughness: 0.60 });
 
+  // Landscape / site materials
+  trunkMat   = new THREE.MeshStandardMaterial({ color: 0x6b4a2b, roughness: 0.9, metalness: 0.0 });
+  dirtMat    = new THREE.MeshStandardMaterial({ color: 0x9a8a6a, roughness: 1.0, metalness: 0.0 });
+  streetMat  = new THREE.MeshStandardMaterial({ color: 0x5a5a5e, roughness: 0.95, metalness: 0.0 });
+  selectRingMat = new THREE.MeshBasicMaterial({ color: 0x4a9eff, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+
   // Groups
   groupNames.forEach(n => { groups[n] = new THREE.Group(); scene.add(groups[n]); });
+  // The site sub-groups live UNDER groups.site so the placement transform
+  // (applySitePlacement) moves the whole plot at once while the pavilion stays at origin.
+  groups.site.add(groups.siteGround, groups.buildings, groups.plants, groups.siteHelpers);
 
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -652,6 +759,7 @@ function initControls() {
   });
   el.addEventListener('mousemove', e => {
     if (!dragging) return;
+    if (suppressOrbit) { landscapeDragMove(e); return; }  // moving a selected plant, not orbiting
     const dx = e.clientX - lastM.x, dy = e.clientY - lastM.y;
     if (dragBtn === 0) {
       orbit.theta -= dx * 0.005;
@@ -671,7 +779,7 @@ function initControls() {
   el.addEventListener('mouseleave', ()=> dragging = false);
   el.addEventListener('wheel', e => {
     orbit.radius *= 1 + e.deltaY*0.001;
-    orbit.radius = Math.max(2, Math.min(50, orbit.radius));
+    orbit.radius = Math.max(2, Math.min(90, orbit.radius));
     updateCam();
   });
   el.addEventListener('contextmenu', e => e.preventDefault());
@@ -702,7 +810,7 @@ function initControls() {
         e.touches[0].clientY-e.touches[1].clientY
       );
       orbit.radius *= pinchDist / d;
-      orbit.radius = Math.max(2, Math.min(50, orbit.radius));
+      orbit.radius = Math.max(2, Math.min(90, orbit.radius));
       pinchDist = d;
       updateCam();
     }
@@ -719,6 +827,140 @@ function updateCam() {
   );
   camera.lookAt(target);
   if (typeof drawCompass === 'function') drawCompass();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LANDSCAPE INTERACTION — raycast place / select / drag / delete
+// Active only on the Landscape tab; coexists with the orbit controls
+// (a click that doesn't drag acts; a drag orbits, unless it started on the
+// currently-selected plant, which moves it instead).
+// ═══════════════════════════════════════════════════════════════
+let landscapeActive = false;
+let activePlantTool = null;     // null = no tool (select mode); else a PLANT_TYPES key
+let selectedPlantUid = null;
+let suppressOrbit = false;      // true while dragging a plant (read by the orbit mousemove guard)
+let movedThreshold = false;     // true once the pointer moved enough to count as a drag
+let downPos = null;
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);  // world Y=0
+
+function setPlantTool(tool) {
+  activePlantTool = (tool && tool !== 'Off') ? tool : null;
+  if (currentTab === 'landscape') {
+    document.querySelectorAll('.palbtn').forEach((b, i) => {
+      const t = PLANT_TOOLS[i];
+      b.classList.toggle('active', activePlantTool === (t === 'Off' ? null : t));
+    });
+  }
+  if (renderer) renderer.domElement.style.cursor = activePlantTool ? 'crosshair' : 'default';
+}
+
+function pointerNDC(e) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+}
+
+// Screen point → plot-LOCAL ground coordinate (clamped to the plot), or null.
+function screenToGround(e) {
+  pointerNDC(e);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = new THREE.Vector3();
+  if (!raycaster.ray.intersectPlane(groundPlane, hit)) return null;
+  const local = groups.site.worldToLocal(hit);
+  const hw = CONFIG.site.plotWidth/2, hd = CONFIG.site.plotDepth/2;
+  local.x = Math.max(-hw, Math.min(hw, local.x));
+  local.z = Math.max(-hd, Math.min(hd, local.z));
+  return local;
+}
+
+function pickPlant(e) {
+  pointerNDC(e);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(groups.plants.children, true);
+  if (!hits.length) return null;
+  let o = hits[0].object;
+  while (o && !(o.userData && o.userData.uid)) o = o.parent;
+  return (o && o.userData) ? o.userData.uid : null;
+}
+
+function selectPlant(uid) {
+  selectedPlantUid = uid || null;
+  buildSiteHelpers(selectedPlantUid);
+}
+
+function placePlant(local) {
+  if (!activePlantTool || !PLANT_TYPES[activePlantTool]) return;
+  const p = { uid: 'p' + (plantUidCounter++), type: activePlantTool, x: local.x, z: local.z };
+  LANDSCAPE.plants.push(p);
+  buildPlants();
+  selectPlant(p.uid);
+  scheduleLandscapeSave();
+}
+
+function deleteSelectedPlant() {
+  if (!selectedPlantUid) return;
+  const i = LANDSCAPE.plants.findIndex(p => p.uid === selectedPlantUid);
+  if (i >= 0) LANDSCAPE.plants.splice(i, 1);
+  selectedPlantUid = null;
+  buildPlants();
+  scheduleLandscapeSave();
+}
+
+// Live-move the selected plant under the cursor (no full rebuild, for smoothness).
+function landscapeDragMove(e) {
+  if (!selectedPlantUid) return;
+  const local = screenToGround(e);
+  if (!local) return;
+  const p = LANDSCAPE.plants.find(pl => pl.uid === selectedPlantUid);
+  if (!p) return;
+  p.x = local.x; p.z = local.z;
+  const obj = groups.plants.children.find(c => c.userData && c.userData.uid === selectedPlantUid);
+  if (obj) obj.position.set(p.x, 0, p.z);
+  buildSiteHelpers(selectedPlantUid);
+}
+
+function initLandscapeInteraction() {
+  const el = renderer.domElement;
+  el.addEventListener('mousedown', e => {
+    if (!landscapeActive || e.button !== 0) return;
+    downPos = { x: e.clientX, y: e.clientY };
+    movedThreshold = false;
+    // Start dragging only if the click lands on the already-selected plant.
+    if (!activePlantTool) {
+      const uid = pickPlant(e);
+      if (uid && uid === selectedPlantUid) {
+        suppressOrbit = true;
+        el.style.cursor = 'grabbing';
+      }
+    }
+  });
+  el.addEventListener('mousemove', e => {
+    if (!landscapeActive || !downPos) return;
+    if (Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y) > 5) movedThreshold = true;
+    // The actual plant move happens in the orbit mousemove guard (suppressOrbit).
+  });
+  el.addEventListener('mouseup', e => {
+    if (!landscapeActive) { downPos = null; suppressOrbit = false; return; }
+    const wasDrag = movedThreshold, wasMoving = suppressOrbit;
+    suppressOrbit = false; downPos = null;
+    el.style.cursor = activePlantTool ? 'crosshair' : 'default';
+    if (e.button !== 0) return;
+    if (wasMoving) { scheduleLandscapeSave(); return; }  // finished a move
+    if (wasDrag) return;                                 // was an orbit drag
+    // Plain click:
+    if (activePlantTool) {
+      const local = screenToGround(e);
+      if (local) placePlant(local);
+    } else {
+      selectPlant(pickPlant(e));
+    }
+  });
+  window.addEventListener('keydown', e => {
+    if (!landscapeActive || !selectedPlantUid) return;
+    if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelectedPlant(); }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1102,6 +1344,219 @@ function buildGround() {
   ground.position.y = -0.01;
   ground.receiveShadow = true;
   g.add(ground);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SITE / LANDSCAPE BUILDERS (Landscape tab)
+// ═══════════════════════════════════════════════════════════════
+let plotGroundMesh = null;
+const siteGeoCache = {};
+function siteGeo(key, factory) {
+  return siteGeoCache[key] || (siteGeoCache[key] = factory());
+}
+// Cached colored matte material (keyed by hex) so clearGroup never leaks materials.
+function siteMat(color) {
+  const key = 'c' + color;
+  return siteMatCache[key] || (siteMatCache[key] =
+    new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0.0 }));
+}
+
+function buildSiteGround() {
+  clearGroup('siteGround');
+  const g = groups.siteGround;
+  const S = CONFIG.site;
+  // Grass apron extending well beyond the plot so the world doesn't end at the edge.
+  const apron = new THREE.Mesh(new THREE.PlaneGeometry(S.plotWidth + 50, S.plotDepth + 50), siteMat(0x4A8C3F));
+  apron.rotation.x = -Math.PI/2;
+  apron.position.y = -0.05;
+  apron.receiveShadow = true;
+  g.add(apron);
+  // Street strip along the north (-Z) edge.
+  const streetW = 6;
+  const street = new THREE.Mesh(new THREE.PlaneGeometry(S.plotWidth + 50, streetW), streetMat);
+  street.rotation.x = -Math.PI/2;
+  street.position.set(0, -0.03, -S.plotDepth/2 - streetW/2);
+  street.receiveShadow = true;
+  g.add(street);
+  // The plot itself (bare dirt). Raycast target for placing plants.
+  const plot = new THREE.Mesh(new THREE.PlaneGeometry(S.plotWidth, S.plotDepth), dirtMat);
+  plot.rotation.x = -Math.PI/2;
+  plot.position.y = -0.012;
+  plot.receiveShadow = true;
+  plot.name = '__plotGround';
+  g.add(plot);
+  plotGroundMesh = plot;
+  // Thin boundary outline on the ground.
+  const hw = S.plotWidth/2, hd = S.plotDepth/2;
+  const pts = [
+    new THREE.Vector3(-hw, 0.02, -hd), new THREE.Vector3( hw, 0.02, -hd),
+    new THREE.Vector3( hw, 0.02,  hd), new THREE.Vector3(-hw, 0.02,  hd),
+    new THREE.Vector3(-hw, 0.02, -hd)
+  ];
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 })
+  );
+  g.add(line);
+}
+
+function buildExistingBuildings() {
+  clearGroup('buildings');
+  if (!CONFIG.site.showBuildings) return;
+  const g = groups.buildings;
+  DEFAULT_BUILDINGS.forEach(b => {
+    box(g, siteMat(b.wallColor), b.w, b.h, b.d, b.x, b.h/2, b.z);  // walls
+    if (b.roof === 'gable') {
+      const ridgeH = Math.min(b.w, b.d) * 0.30;
+      const slopeLen = Math.sqrt((b.d/2)*(b.d/2) + ridgeH*ridgeH);
+      const ang = Math.atan2(ridgeH, b.d/2);
+      const rm = siteMat(b.roofColor);
+      const eaves = 0.5;
+      box(g, rm, b.w + eaves, 0.10, slopeLen, b.x, b.h + ridgeH/2, b.z - b.d/4, -ang, 0, 0);
+      box(g, rm, b.w + eaves, 0.10, slopeLen, b.x, b.h + ridgeH/2, b.z + b.d/4,  ang, 0, 0);
+    } else {
+      box(g, siteMat(b.roofColor), b.w + 0.3, 0.12, b.d + 0.3, b.x, b.h + 0.06, b.z);
+    }
+  });
+}
+
+// Returns a THREE.Group for one plant. Geometry is shared (unit) and scaled
+// per-instance so clearGroup never needs to dispose it.
+function makeTree(type, p) {
+  const t = PLANT_TYPES[type] || PLANT_TYPES.tree;
+  const canopyR = p.canopyR || t.canopyR;
+  const height  = p.height  || t.height;
+  const trunkH  = Math.max(0.1, t.trunkH * (height / t.height));
+  const grp = new THREE.Group();
+  const fol = siteMat(t.canopyColor);
+
+  const trunk = new THREE.Mesh(siteGeo('trunk', () => new THREE.CylinderGeometry(0.7, 1, 1, 7)), trunkMat);
+  trunk.scale.set(t.trunkR, trunkH, t.trunkR);
+  trunk.position.y = trunkH/2;
+  trunk.castShadow = true;
+  grp.add(trunk);
+
+  const canopyH = Math.max(0.3, height - trunkH);
+  if (t.foliage === 'cone3') {
+    for (let i = 0; i < 3; i++) {
+      const cone = new THREE.Mesh(siteGeo('cone', () => new THREE.ConeGeometry(1, 1, 8)), fol);
+      const ch = canopyH * 0.55, frac = 1 - i*0.26;
+      cone.scale.set(canopyR*frac, ch, canopyR*frac);
+      cone.position.y = trunkH + i*(canopyH*0.26) + ch/2;
+      cone.castShadow = true;
+      grp.add(cone);
+    }
+  } else if (t.foliage === 'blob') {
+    const blob = new THREE.Mesh(siteGeo('ico', () => new THREE.IcosahedronGeometry(1, 1)), fol);
+    blob.scale.set(canopyR, canopyR*0.7, canopyR);
+    blob.position.y = trunkH + canopyR*0.45;
+    blob.castShadow = true;
+    grp.add(blob);
+  } else {
+    const lobes = (type === 'tree_big') ? 3 : 1;
+    for (let i = 0; i < lobes; i++) {
+      const lobe = new THREE.Mesh(siteGeo('ico', () => new THREE.IcosahedronGeometry(1, 1)), fol);
+      const r = canopyR * (i === 0 ? 1 : 0.68);
+      lobe.scale.set(r, r*1.05, r);
+      const ang = i * 2.2, off = i === 0 ? 0 : canopyR*0.65;
+      lobe.position.set(Math.cos(ang)*off, trunkH + canopyH*0.5 + (i ? canopyR*0.15 : 0), Math.sin(ang)*off);
+      lobe.castShadow = true;
+      grp.add(lobe);
+    }
+  }
+  return grp;
+}
+
+function buildPlants() {
+  clearGroup('plants');
+  const g = groups.plants;
+  const showExisting = CONFIG.site.showExistingTrees;
+  LANDSCAPE.plants.forEach(p => {
+    if (p.default && !showExisting) return;
+    const tree = makeTree(p.type, p);
+    tree.position.set(p.x, 0, p.z);
+    tree.userData = { uid: p.uid, kind: 'plant' };
+    tree.traverse(o => { if (o.isMesh) o.userData.plantUid = p.uid; });
+    g.add(tree);
+  });
+  buildSiteHelpers(selectedPlantUid);
+  updateLandscapeStats();
+}
+
+// Selection ring around the selected plant. Cheap; rebuilt on selection change.
+function buildSiteHelpers(uid) {
+  clearGroup('siteHelpers');
+  if (!uid) return;
+  const p = LANDSCAPE.plants.find(pl => pl.uid === uid);
+  if (!p) return;
+  const t = PLANT_TYPES[p.type] || PLANT_TYPES.tree;
+  const r = (p.canopyR || t.canopyR);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(r*0.95, r*1.18, 36), selectRingMat);
+  ring.rotation.x = -Math.PI/2;
+  ring.position.set(p.x, 0.03, p.z);
+  groups.siteHelpers.add(ring);
+}
+
+// Move the whole site so plot point (pavX,pavZ) lands at world origin with
+// the pavilion appearing rotated by pavRot. Pavilion stays fixed at origin.
+function applySitePlacement() {
+  const s = CONFIG.site;
+  const rot = -s.pavRot * Math.PI/180;          // site rotates opposite to the pavilion's apparent yaw
+  groups.site.rotation.set(0, rot, 0);
+  const c = Math.cos(rot), sn = Math.sin(rot);  // T = -R(rot) * (pavX,pavZ)
+  groups.site.position.set(-(s.pavX*c + s.pavZ*sn), 0, s.pavX*sn - s.pavZ*c);
+}
+
+function updateLandscapeStats() {
+  if (currentTab !== 'landscape') return;
+  document.getElementById('stats').innerHTML = 'Plants: ' + LANDSCAPE.plants.length;
+}
+
+// ── Persistence (localStorage) ──────────────────────────────────
+const LANDSCAPE_KEY = 'pavilionBuilder.landscape.v1';
+let landscapeSaveTimer;
+function scheduleLandscapeSave() {
+  clearTimeout(landscapeSaveTimer);
+  landscapeSaveTimer = setTimeout(saveLandscape, 300);
+}
+function saveLandscape() {
+  LANDSCAPE.version = LANDSCAPE_VERSION;
+  LANDSCAPE.pav = { x: CONFIG.site.pavX, z: CONFIG.site.pavZ, rot: CONFIG.site.pavRot };
+  try { localStorage.setItem(LANDSCAPE_KEY, JSON.stringify(LANDSCAPE)); } catch (e) {}
+}
+function loadLandscape() {
+  let data = null;
+  try { data = JSON.parse(localStorage.getItem(LANDSCAPE_KEY) || 'null'); } catch (e) { data = null; }
+  if (data && data.version === LANDSCAPE_VERSION && Array.isArray(data.plants)) {
+    LANDSCAPE = data;
+    if (data.pav) {
+      CONFIG.site.pavX = data.pav.x; CONFIG.site.pavZ = data.pav.z; CONFIG.site.pavRot = data.pav.rot;
+    }
+    // keep the uid counter ahead of any loaded uids
+    LANDSCAPE.plants.forEach(p => {
+      const n = parseInt(String(p.uid).replace(/\D/g, ''), 10);
+      if (!isNaN(n) && n >= plantUidCounter) plantUidCounter = n + 1;
+    });
+  } else {
+    LANDSCAPE = {
+      version: LANDSCAPE_VERSION,
+      pav: { x: CONFIG.site.pavX, z: CONFIG.site.pavZ, rot: CONFIG.site.pavRot },
+      plants: makeDefaultPlants()
+    };
+  }
+}
+function resetLandscape() {
+  try { localStorage.removeItem(LANDSCAPE_KEY); } catch (e) {}
+  CONFIG.site.pavX = 0; CONFIG.site.pavZ = 4; CONFIG.site.pavRot = 0;
+  CONFIG.site.showBuildings = 1; CONFIG.site.showExistingTrees = 1;
+  selectedPlantUid = null;
+  LANDSCAPE = { version: LANDSCAPE_VERSION, pav: { x:0, z:4, rot:0 }, plants: makeDefaultPlants() };
+  buildSiteGround();
+  buildExistingBuildings();
+  buildPlants();
+  applySitePlacement();
+  createGUI();
+  saveLandscape();
 }
 
 function buildFoundation() {
@@ -3100,6 +3555,10 @@ function rebuildModel() {
   buildFence();
   buildFurniture();
   buildDimensions();
+  buildSiteGround();
+  buildExistingBuildings();
+  buildPlants();
+  applySitePlacement();
   updateSunPosition();
 }
 
@@ -3129,6 +3588,22 @@ function createGUI() {
             onchange="onToggleGroup('${ctrl.k}',this.checked)">
           <label for="c_${ctrl.k}">${ctrl.l}</label>
         </div>`;
+      } else if (ctrl.type === 'sitecheck') {
+        const checked = cfgGet(ctrl.k) ? 'checked' : '';
+        html += `<div class="gc">
+          <input type="checkbox" ${checked}
+            onchange="onSiteToggle('${ctrl.k}',this.checked)">
+          <label>${ctrl.l}</label>
+        </div>`;
+      } else if (ctrl.type === 'button') {
+        html += `<button class="gbtn${ctrl.danger ? ' danger' : ''}" onclick="onButton('${ctrl.k}')">${ctrl.l}</button>`;
+      } else if (ctrl.type === 'palette') {
+        const btns = PLANT_TOOLS.map((tool, i) => {
+          const label = tool === 'Off' ? 'Off' : (PLANT_TYPES[tool] ? PLANT_TYPES[tool].label : tool);
+          const sel = (activePlantTool === (tool === 'Off' ? null : tool)) ? ' active' : '';
+          return `<button class="palbtn${sel}" onclick="onPalette(${i})">${label}</button>`;
+        }).join('');
+        html += `<div class="palette">${btns}</div>`;
       } else if (ctrl.type === 'select') {
         const val = cfgGet(ctrl.k);
         const id = ctrl.k.replace(/\./g, '_');
@@ -3163,7 +3638,9 @@ window.onSlider = function(key, id, val, dec) {
   val = parseFloat(val);
   cfgSet(key, val);
   document.getElementById('v_'+id).value = val.toFixed(dec);
-  if (key.startsWith('sun.')) { updateSunPosition(); } else { scheduleRebuild(); }
+  if (key.startsWith('sun.')) { updateSunPosition(); }
+  else if (key.startsWith('site.pav')) { applySitePlacement(); scheduleLandscapeSave(); }
+  else { scheduleRebuild(); }
 };
 
 window.onSelect = function(key, val) {
@@ -3177,7 +3654,9 @@ window.onValue = function(key, id, val, dec) {
   cfgSet(key, val);
   document.getElementById('r_'+id).value = val;
   document.getElementById('v_'+id).value = val.toFixed(dec);
-  if (key.startsWith('sun.')) { updateSunPosition(); } else { scheduleRebuild(); }
+  if (key.startsWith('sun.')) { updateSunPosition(); }
+  else if (key.startsWith('site.pav')) { applySitePlacement(); scheduleLandscapeSave(); }
+  else { scheduleRebuild(); }
 };
 
 window.onToggleGroup = function(groupName, visible) {
@@ -3189,6 +3668,20 @@ window.onToggleGroup = function(groupName, visible) {
   } else if (groups[groupName]) {
     groups[groupName].visible = visible;
   }
+};
+
+window.onSiteToggle = function(key, checked) {
+  cfgSet(key, checked ? 1 : 0);
+  scheduleRebuild();
+};
+
+window.onButton = function(k) {
+  if (k === '__deleteSelected') deleteSelectedPlant();
+  else if (k === '__resetLandscape') resetLandscape();
+};
+
+window.onPalette = function(i) {
+  setPlantTool(PLANT_TOOLS[i]);
 };
 
 window.toggleGUI = function() {
@@ -3204,6 +3697,10 @@ const PAVILION_ONLY_GROUPS = ['foundation','pathways','posts','beams','ridge','b
   'rafters','roof','panelling','brickWall','fence','furniture','dims'];
 // Groups visible only in the kitchen tab
 const KITCHEN_ONLY_GROUPS = ['kitchenBackdrop','kitchenSlab'];
+// Pavilion groups shown for CONTEXT on the landscape tab (no dims).
+const LANDSCAPE_VISIBLE_PAVILION = ['foundation','pathways','posts','beams','ridge','braces',
+  'rafters','roof','panelling','brickWall','fence','furniture','kitchen'];
+let sceneFogStore = null;  // stash the Fog while on the landscape tab
 
 // Per-tab orbit snapshots
 const TAB_ORBIT = {
@@ -3211,7 +3708,9 @@ const TAB_ORBIT = {
               targetX: 0, targetY: 1.8, targetZ: 0 },
   kitchen:  { theta: -Math.PI*0.45, phi: Math.PI*0.42, radius: 4.2,
               // target computed dynamically from kitchen footprint at switch time
-              targetX: null, targetY: 1.0, targetZ: null }
+              targetX: null, targetY: 1.0, targetZ: null },
+  landscape:{ theta: Math.PI*0.5, phi: Math.PI*0.18, radius: 48,
+              targetX: 0, targetY: 0, targetZ: 0 }
 };
 
 function computeKitchenCameraTarget() {
@@ -3236,22 +3735,37 @@ window.switchTab = function(tab) {
   TAB_ORBIT[currentTab].theta = orbit.theta;
   TAB_ORBIT[currentTab].phi = orbit.phi;
   TAB_ORBIT[currentTab].radius = orbit.radius;
-  if (currentTab === 'pavilion') {
-    TAB_ORBIT.pavilion.targetX = orbit.target.x;
-    TAB_ORBIT.pavilion.targetY = orbit.target.y;
-    TAB_ORBIT.pavilion.targetZ = orbit.target.z;
+  if (currentTab === 'pavilion' || currentTab === 'landscape') {
+    TAB_ORBIT[currentTab].targetX = orbit.target.x;
+    TAB_ORBIT[currentTab].targetY = orbit.target.y;
+    TAB_ORBIT[currentTab].targetZ = orbit.target.z;
   }
 
   currentTab = tab;
+  const isLand = (tab === 'landscape');
   // Toggle group visibility
   PAVILION_ONLY_GROUPS.forEach(n => { if (groups[n]) groups[n].visible = (tab === 'pavilion'); });
   KITCHEN_ONLY_GROUPS.forEach(n => { if (groups[n]) groups[n].visible = (tab === 'kitchen'); });
   // Force kitchen visible when in kitchen tab (in case user unchecked it from pavilion)
   if (tab === 'kitchen' && groups.kitchen) groups.kitchen.visible = true;
+  // Landscape: show the site + the pavilion model (for context); hide dims & green ground.
+  groups.site.visible = isLand;
+  if (isLand) {
+    LANDSCAPE_VISIBLE_PAVILION.forEach(n => { if (groups[n]) groups[n].visible = true; });
+    if (groups.dims) groups.dims.visible = false;
+  }
+  if (groups.ground) groups.ground.visible = !isLand;
+  // Fog only spans 30-80m; disable it for the large plot.
+  if (isLand) { if (scene.fog) sceneFogStore = scene.fog; scene.fog = null; }
+  else if (sceneFogStore) { scene.fog = sceneFogStore; }
+  landscapeActive = isLand;
+  setPlantTool('Off');  // reset placement tool on every tab switch
 
   // Update active tab button styling
-  document.getElementById('tab_pavilion').classList.toggle('active', tab === 'pavilion');
-  document.getElementById('tab_kitchen').classList.toggle('active', tab === 'kitchen');
+  ['pavilion','kitchen','landscape'].forEach(n => {
+    const b = document.getElementById('tab_' + n);
+    if (b) b.classList.toggle('active', tab === n);
+  });
 
   // Camera reposition
   const snap = TAB_ORBIT[tab];
@@ -3269,13 +3783,16 @@ window.switchTab = function(tab) {
   // Regenerate GUI sections for the new tab
   createGUI();
 
-  // Refresh HUD stats
+  // Info line + HUD stats
+  document.getElementById('info').innerHTML = isLand
+    ? 'Pick a plant tool + click ground to place · click a plant to select · drag selected to move · Del removes'
+    : 'LMB: Rotate &nbsp; RMB: Pan &nbsp; Scroll: Zoom';
   if (tab === 'kitchen') {
-    // Trigger a kitchen rebuild so updateStats fires with kitchen info
-    buildKitchen();
+    buildKitchen();                 // kitchen rebuild fires updateStats with kitchen info
+  } else if (isLand) {
+    updateLandscapeStats();
   } else {
-    // Pavilion stats from brick wall
-    buildBrickWall();
+    buildBrickWall();               // pavilion stats from brick wall
   }
 };
 
@@ -3292,10 +3809,13 @@ function animate() {
 // ═══════════════════════════════════════════════════════════════
 initScene();
 initControls();
+initLandscapeInteraction();
+loadLandscape();
 createGUI();
 rebuildModel();
-// Default tab is pavilion: hide kitchen-only backdrop groups
+// Default tab is pavilion: hide kitchen-only backdrop groups and the whole site
 KITCHEN_ONLY_GROUPS.forEach(n => { if (groups[n]) groups[n].visible = false; });
+groups.site.visible = false;
 animate();
 </script>
 </body>
