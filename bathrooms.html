@@ -330,6 +330,7 @@ function updateCam(){
     target.y+radius*Math.cos(phi),
     target.z+radius*Math.sin(phi)*Math.sin(theta));
   camera.lookAt(target);
+  if(typeof updateWallVisibility==='function') updateWallVisibility();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -337,7 +338,8 @@ function updateCam(){
 // ═══════════════════════════════════════════════════════════════
 function clearGroup(n){
   const g=groups[n];
-  while(g.children.length){ const c=g.children[0]; if(c.geometry) c.geometry.dispose(); g.remove(c); }
+  g.traverse(o=>{ if(o.geometry) o.geometry.dispose(); });  // dispose nested (per-wall sub-groups)
+  while(g.children.length) g.remove(g.children[0]);
 }
 
 // Build a flat convex polygon (fan-triangulated) with explicit UVs.
@@ -484,7 +486,9 @@ function buildFloorTiles(B){
 // ═══════════════════════════════════════════════════════════════
 // One polygon edge p0->p1 (floor level), outward normal n, height H.
 // mode '3d' => tiles rise vertically; 'unfold' => fold flat outward.
-function buildWall(edge, H, wc, doorRect, mode){
+// All geometry is added to `g` (a per-wall sub-group, so the wall can be
+// hidden as a unit for the doll-house interior view).
+function buildWall(g, edge, H, wc, doorRect, mode){
   const p0=edge.p0, p1=edge.p1, n=edge.n;
   const ax=p1.x-p0.x, az=p1.z-p0.z, L=Math.hypot(ax,az);
   if(L<1e-4) return;
@@ -513,7 +517,7 @@ function buildWall(edge, H, wc, doorRect, mode){
       if(mode==='unfold') return [w[0], 0.001, w[2]];
       return [w[0]-inward.x*backOff, w[1], w[2]-inward.z*backOff];
     });
-    poly(groups.base, groutMat, pts, [[0,0],[1,0],[1,1],[0,1]]);
+    poly(g, groutMat, pts, [[0,0],[1,0],[1,1],[0,1]]);
   });
 
   // ---- band vertical range ----
@@ -542,7 +546,7 @@ function buildWall(edge, H, wc, doorRect, mode){
         const pts=[[pr.x0,pr.y0],[pr.x1,pr.y0],[pr.x1,pr.y1],[pr.x0,pr.y1]].map(q=>toWorld(q[0],q[1]));
         const uvs=[[pr.x0,pr.y0],[pr.x1,pr.y0],[pr.x1,pr.y1],[pr.x0,pr.y1]].map(q=>
           [ (q[0]-u0)/tw, (q[1]-v0)/th ]);
-        poly(groups.walls, mat, pts, uvs);
+        poly(g, mat, pts, uvs);
       });
     }
   }
@@ -555,7 +559,7 @@ function buildWall(edge, H, wc, doorRect, mode){
       const leaf=[[dl.x0,dl.y0],[dl.x1,dl.y0],[dl.x1,dl.y1],[dl.x0,dl.y1]].map(q=>{
         const w=toWorld(q[0],q[1]); return [w[0]+inward.x*0.05, w[1], w[2]+inward.z*0.05];
       });
-      poly(groups.trim, doorMat, leaf, [[0,0],[1,0],[1,1],[0,1]]);
+      poly(g, doorMat, leaf, [[0,0],[1,0],[1,1],[0,1]]);
     }
   }
 }
@@ -600,10 +604,29 @@ function buildRoom(){
       if(x0<0.01){x0=0.01;x1=x0+dw;} if(x1>e.len-0.01){x1=e.len-0.01;x0=x1-dw;}
       dr={x0,x1,y0:0,y1:Math.min(B.door.height,R.height)};
     }
-    buildWall(e, R.height, wc, dr, mode);
+    const sub=new THREE.Group();
+    sub.userData.outward={x:e.n.x, z:e.n.z};   // for doll-house culling
+    groups.walls.add(sub);
+    buildWall(sub, e, R.height, wc, dr, mode);
   });
 
+  updateWallVisibility();
   updateStats(B);
+}
+
+// Doll-house view: in 3D, hide the walls between the camera and the room so
+// the tiled interior is visible. In unfold mode, show every wall.
+function updateWallVisibility(){
+  if(!groups.walls) return;
+  const interior = CONFIG.view==='3d';
+  groups.walls.children.forEach(sub=>{
+    const o=sub.userData.outward;
+    if(!interior || !o){ sub.visible=true; return; }
+    const dx=camera.position.x, dz=camera.position.z;   // room is centred at origin
+    // hide any wall whose outward face points toward the camera (it would
+    // block the view in); keep far walls and near-perpendicular side walls.
+    sub.visible = (o.x*dx + o.z*dz) < 0.06*orbit.radius;
+  });
 }
 
 function updateStats(B){
