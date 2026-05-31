@@ -5,3 +5,6 @@
 
 # Tooling / debug artifacts
 /.playwright-mcp/
+
+# macOS
+.DS_Store
