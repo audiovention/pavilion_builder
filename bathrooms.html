@@ -128,11 +128,12 @@ const CONFIG = {
     door: { wall:0, position:0.62, width:0.80, height:2.05 }
   }),
   B: bathCfg({
-    // From the hand sketch: ~120 wide × 200 deep, a ~44×78 notch in the
-    // back-left corner (left wall 122 = depth 200 − notch 78). Door in the notch.
+    // From the hand sketch: ~120 wide × 200 deep, a 20×120 notch in the
+    // back-left corner; the remaining (front) part of the left wall is 0.80 m,
+    // which is where the door sits.
     room: { width:1.20, depth:2.00, height:2.55,
-            notchCorner:3, notchWidth:0.44, notchDepth:0.78 },
-    door: { wall:3, position:0.30, width:0.70, height:2.05 }
+            notchCorner:3, notchWidth:0.20, notchDepth:1.20 },
+    door: { wall:3, position:0.50, width:0.70, height:2.05 }
   })
 };
 
@@ -479,6 +480,17 @@ function cardinalOf(nx,nz){
   return nz>0?'N':'S';
 }
 
+// Ray-casting point-in-polygon (poly = [{x,z},...]). Used to orient wall
+// normals toward the true interior, even for concave (notch) walls.
+function pointInPoly(px, pz, poly){
+  let inside=false;
+  for(let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const xi=poly[i].x, zi=poly[i].z, xj=poly[j].x, zj=poly[j].z;
+    if(((zi>pz)!==(zj>pz)) && (px < (xj-xi)*(pz-zi)/(zj-zi)+xi)) inside=!inside;
+  }
+  return inside;
+}
+
 // Sutherland–Hodgman clip of a 2D polygon (array of [x,z]) to an axis rect.
 function clipToRect(pts, r){
   const clip=(p,axis,val,keepGreater)=>{
@@ -680,21 +692,31 @@ function buildRoom(){
 
   // build edges from polygon, classify by cardinal, find door edge
   const poly2=roomPolygon(R);
-  const cen={x:0,z:0}; poly2.forEach(p=>{cen.x+=p.x;cen.z+=p.z;}); cen.x/=poly2.length; cen.z/=poly2.length;
+  const W=R.width, D=R.depth, EPS=1e-3;
   const edges=[];
   for(let i=0;i<poly2.length;i++){
     const p0=poly2[i], p1=poly2[(i+1)%poly2.length];
     const dx=p1.x-p0.x, dz=p1.z-p0.z, len=Math.hypot(dx,dz);
     if(len<1e-4) continue;
-    let nx=dz/len, nz=-dx/len;                          // right normal (CCW => outward)
-    const mx=(p0.x+p1.x)/2-cen.x, mz=(p0.z+p1.z)/2-cen.z;
-    if(nx*mx+nz*mz<0){ nx=-nx; nz=-nz; }                // ensure it points outward
-    edges.push({p0,p1,len,n:{x:nx,z:nz},card:cardinalOf(nx,nz)});
+    let nx=dz/len, nz=-dx/len;                          // a unit perpendicular
+    // Orient OUTWARD using the polygon itself (robust for concave notch walls,
+    // unlike a centroid test): if a small step along (nx,nz) lands INSIDE the
+    // room, that's the inward side, so flip.
+    const mx=(p0.x+p1.x)/2, mz=(p0.z+p1.z)/2, t=Math.min(len*0.4, 0.03);
+    if(pointInPoly(mx+nx*t, mz+nz*t, poly2)){ nx=-nx; nz=-nz; }
+    // an edge is on the OUTER perimeter (a bounding-box side) vs a notch inner wall
+    const outer = (Math.abs(dx)<EPS && Math.abs(Math.abs(p0.x)-W/2)<EPS) ||
+                  (Math.abs(dz)<EPS && Math.abs(Math.abs(p0.z)-D/2)<EPS);
+    edges.push({p0,p1,len,n:{x:nx,z:nz},card:cardinalOf(nx,nz),outer});
   }
-  // choose the door edge = longest edge of the requested cardinal
+  // Door = longest edge of the requested cardinal, preferring OUTER walls so a
+  // deep notch's inner wall never steals the door.
   const doorCard=CARDINALS[((B.door.wall|0)%4+4)%4];
+  const cand=edges.filter(e=>e.card===doorCard);
+  const outerCand=cand.filter(e=>e.outer);
+  const pool=outerCand.length?outerCand:cand;
   let doorEdge=null;
-  edges.forEach(e=>{ if(e.card===doorCard && (!doorEdge||e.len>doorEdge.len)) doorEdge=e; });
+  pool.forEach(e=>{ if(!doorEdge||e.len>doorEdge.len) doorEdge=e; });
 
   edges.forEach(e=>{
     const wc=B.walls[e.card];
