@@ -134,10 +134,15 @@ const CONFIG = {
   })
 };
 
-// Showcase defaults: an effect band on A's back wall, an accent wall on B.
-CONFIG.A.walls.N.bandRows = 2;  CONFIG.A.walls.N.bandHeight = 1.10; CONFIG.A.walls.N.bandTile = 0;
-CONFIG.B.walls.N.accent  = 2;   // 2 => Olas wave full accent wall
-CONFIG.B.walls.E.bandRows = 1;  CONFIG.B.walls.E.bandHeight = 1.20; CONFIG.B.walls.E.bandTile = 0;
+// ── Bathroom A (rectangular) — Kalina range ──
+CONFIG.A.floor.angle    = 45;                                    // floor laid at 45°
+CONFIG.A.walls.S.accent = 1;                                     // front wall = full patchwork accent
+['N','E','W'].forEach(c=>{ CONFIG.A.walls[c].bandRows = 2; CONFIG.A.walls[c].bandTile = 1; }); // 2 rows Olas waves
+
+// ── Bathroom B (notch) — Alaplana Pune + Keros Pisa range ──
+CONFIG.B.floor.prod = 2;                                         // Keros Pisa Gris 33×33
+['N','E','S','W'].forEach(c=>{ CONFIG.B.walls[c].prod = 1; });   // Alaplana Pune Blanco field
+CONFIG.B.walls.N.accent = 4;                                     // back wall = Pune Cuadros accent
 
 // ═══════════════════════════════════════════════════════════════
 // CONFIG ACCESS HELPERS (dot-notation, e.g. 'A.walls.N.grout')
@@ -148,7 +153,7 @@ function cfgSet(path,val){
   ks.reduce((o,k)=>o[k], CONFIG)[last] = val;
 }
 
-const DECOR_NAMES = ['Patchwork décor','Olas wave décor','Plain accent'];
+const DECOR_NAMES = ['Patchwork décor','Olas wave décor','Plain accent','Pune Cuadros'];
 const CARDINALS = ['N','E','S','W'];
 const DOOR_WALL_NAMES = ['Back (N)','Right (E)','Front (S)','Left (W)'];
 
@@ -157,14 +162,16 @@ const DOOR_WALL_NAMES = ['Back (N)','Right (E)','Front (S)','Left (W)'];
 // Floor: w×h in metres (+ which texture set). Wall: a=long, b=short side; the
 // laid W/H come from a/b swapped by the per-wall orientation toggle.
 const FLOOR_TILES = [
-  { label:'Momastela Ghirigori 31×62 (mixed)', w:0.62, h:0.31, kind:'momastela' },
-  { label:'Kalina Gris 33×33',                 w:0.33, h:0.33, kind:'kalina' }
+  { label:'Momastela Ghirigori 31×62 (mixed)', w:0.62, h:0.31, mixed:true },
+  { label:'Kalina Gris 33×33',                 w:0.33, h:0.33, tex:'floor' },
+  { label:'Keros Pisa Gris 33×33',             w:0.33, h:0.33, tex:'pisa' }
 ];
 const WALL_TILES = [
-  { label:'Kalina Gris 25×50', a:0.50, b:0.25 }
+  { label:'Kalina Gris 25×50',          a:0.50, b:0.25, tex:'wall' },
+  { label:'Alaplana Pune Blanco 30×60', a:0.60, b:0.30, tex:'puneBlanco' }
 ];
-// Purchasing labels for the décor / accent products (all 25×50).
-const DECOR_TILE_LABEL = ['Kalina patchwork décor 25×50','Kalina Olas décor 25×50','Plain accent 25×50'];
+// Purchasing labels for the décor / accent products (index = décor id).
+const DECOR_TILE_LABEL = ['Kalina patchwork décor 25×50','Kalina Olas décor 25×50','Plain accent 25×50','Alaplana Pune Cuadros 30×60'];
 
 // ═══════════════════════════════════════════════════════════════
 // PROCEDURAL FALLBACK TEXTURES (used in "flat colours" mode and if the
@@ -270,7 +277,10 @@ function initScene(){
     floor: loadTile('tiles/kalina_gris_floor.jpg', concreteCanvas('#cfcfca')),
     wall:  loadTile('tiles/kalina_gris_wall.jpg',  concreteCanvas('#d6d6d1')),
     patch: loadTile('tiles/kalina_gris_decor.jpg', decorCanvas()),
-    olas:  loadTile('tiles/kalina_olas_gris_decor.jpg', waveCanvas())
+    olas:  loadTile('tiles/kalina_olas_gris_decor.jpg', waveCanvas()),
+    puneBlanco: loadTile('tiles/alaplana_pune_blanco.jpg',  concreteCanvas('#f1f1ee')),
+    pisa:       loadTile('tiles/keros_pisa_gris.jpg',       concreteCanvas('#eeeeec')),
+    cuadros:    loadTile('tiles/alaplana_pune_cuadros.jpg', decorCanvas())
   };
   const mk=(tex)=>{ tex.wrapS=tex.wrapT=THREE.ClampToEdgeWrapping; tex.encoding=THREE.sRGBEncoding;
     return new THREE.MeshStandardMaterial({map:tex, roughness:0.6, side:THREE.DoubleSide}); };
@@ -278,7 +288,10 @@ function initScene(){
     floor: mk(concreteCanvas('#cbcbc6')),
     wall:  mk(concreteCanvas('#d8d8d3')),
     patch: mk(decorCanvas()),
-    olas:  mk(waveCanvas())
+    olas:  mk(waveCanvas()),
+    puneBlanco: mk(concreteCanvas('#f1f1ee')),
+    pisa:       mk(concreteCanvas('#eeeeec')),
+    cuadros:    mk(decorCanvas())
   };
 
   // Momastela Ghirigori N 31×62 — a "mixed pack": 3 different decorated faces
@@ -307,6 +320,7 @@ function initScene(){
 
 function decorMat(idx){
   if(idx===2) return plainAccentMat;
+  if(idx===3) return MAT.cuadros;
   return idx===1 ? MAT.olas : MAT.patch;
 }
 
@@ -316,13 +330,14 @@ function floorFaceIndex(i, j, n){
   return h % n;
 }
 // Floor tile material for grid cell (i,j).
-//   kind 'kalina'    -> single Kalina Gris field tile.
-//   kind 'momastela' -> Momastela Ghirigori mixed pack — one of the N faces.
-function floorMatFor(kind, i, j){
-  if(kind!=='momastela') return MAT.floor;
-  const set = CONFIG.texture ? momastelaPhoto : momastelaColor;
-  if(!set.length) return MAT.floor;
-  return set[floorFaceIndex(i, j, set.length)];
+//   prod.mixed -> Momastela mixed pack, one of the N faces (stable by hash).
+//   else        -> single texture MAT[prod.tex].
+function floorMatFor(prod, i, j){
+  if(prod && prod.mixed){
+    const set = CONFIG.texture ? momastelaPhoto : momastelaColor;
+    if(set.length) return set[floorFaceIndex(i, j, set.length)];
+  }
+  return MAT[(prod && prod.tex) || 'floor'] || MAT.floor;
 }
 
 // ── Tile take-off / schedule ──────────────────────────────────────────────
@@ -330,7 +345,7 @@ function floorMatFor(kind, i, j){
 // tile or a tile split by the door still counts once.
 function emptyTally(){
   return { floorLabel:'', floorTotal:0, faces:null,
-           wallField:0, decorPatch:0, decorOlas:0, plain:0 };
+           wallField:0, decor:DECOR_TILE_LABEL.map(()=>0) };  // decor[i] = décor product i
 }
 let TALLY = emptyTally();
 
@@ -510,7 +525,7 @@ function buildFloorTiles(B){
   // take-off bookkeeping
   TALLY.floorLabel = prod.label;
   const faceN = (CONFIG.texture ? momastelaPhoto : momastelaColor).length || 1;
-  TALLY.faces = (prod.kind==='momastela') ? new Array(faceN).fill(0) : null;
+  TALLY.faces = prod.mixed ? new Array(faceN).fill(0) : null;
   const counted = new Set();   // grid cells already tallied (a cell may straddle 2 region rects)
 
   // screed (dark base showing through grout) — one quad per region rect
@@ -540,7 +555,7 @@ function buildFloorTiles(B){
         const pts=cl.map(p=>[p[0],Y,p[1]]);
         const uvs=cl.map(p=>{ const gu=p[0]*e1[0]+p[1]*e1[1], gv=p[0]*e2[0]+p[1]*e2[1];
           return [(gu-gu0)/tw, 1-(gv-gv0)/th]; });
-        poly(groups.floor, floorMatFor(prod.kind, i, j), pts, uvs);
+        poly(groups.floor, floorMatFor(prod, i, j), pts, uvs);
         const key=i+','+j;
         if(!counted.has(key)){
           counted.add(key);
@@ -573,8 +588,9 @@ function buildWall(grp, edge, H, wc, doorRect, mode){
   };
 
   const wp = WALL_TILES[Math.round(wc.prod||0)] || WALL_TILES[0];
-  let tw=wp.a, th=wp.b;                         // a = long side, b = short side
-  if(wc.orient===1){ const t=tw; tw=th; th=t; } // vertical orientation
+  const fieldMat = MAT[wp.tex] || MAT.wall;     // field texture from the chosen product
+  let tw=wp.a, th=wp.b;                          // a = long side, b = short side
+  if(wc.orient===1){ const t=tw; tw=th; th=t; }  // vertical orientation
   const g=Math.max(0,wc.grout), px=tw+g, py=th+g;
 
   // ---- wall backing (grout colour) = wall rect minus door ----
@@ -605,7 +621,7 @@ function buildWall(grp, edge, H, wc, doorRect, mode){
     const v0=wc.offsetY+j*py, v1=v0+th, vc=(v0+v1)/2;
     const rowShift=(wc.bond===1 && (((j%2)+2)%2)===1) ? px/2 : 0;
     // material + which take-off bucket this row's tiles belong to
-    let mat=MAT.wall, didx=-1;   // didx -1 = field; 0/1/2 = décor product
+    let mat=fieldMat, didx=-1;   // didx -1 = field; >=0 = décor product index
     if(isAccent){ mat=accMat; didx=wc.accent-1; }
     else if(bandRows>0 && Math.abs(vc-wc.bandHeight)<=bandHalf){ mat=decorMat(wc.bandTile); didx=wc.bandTile; }
     for(let i=-1;i<=iMax;i++){
@@ -624,9 +640,7 @@ function buildWall(grp, edge, H, wc, doorRect, mode){
         placed=true;
       });
       if(placed){   // one physical tile per grid cell, regardless of door cuts
-        if(didx===0) TALLY.decorPatch++;
-        else if(didx===1) TALLY.decorOlas++;
-        else if(didx===2) TALLY.plain++;
+        if(didx>=0 && didx<TALLY.decor.length) TALLY.decor[didx]++;
         else TALLY.wallField++;
       }
     }
@@ -732,11 +746,9 @@ function updateStats(B){
     L.push(row(TALLY.floorLabel, TALLY.floorTotal));
     if(TALLY.faces) TALLY.faces.forEach((c,i)=> L.push(row('face '+(i+1), c, '  ')));
   }
-  if(TALLY.wallField>0)  L.push(row(WALL_TILES[0].label, TALLY.wallField));
-  if(TALLY.decorPatch>0) L.push(row(DECOR_TILE_LABEL[0], TALLY.decorPatch));
-  if(TALLY.decorOlas>0)  L.push(row(DECOR_TILE_LABEL[1], TALLY.decorOlas));
-  if(TALLY.plain>0)      L.push(row(DECOR_TILE_LABEL[2], TALLY.plain));
-  const grand=TALLY.floorTotal+TALLY.wallField+TALLY.decorPatch+TALLY.decorOlas+TALLY.plain;
+  if(TALLY.wallField>0)  L.push(row(WALL_TILES[Math.round(B.walls.N.prod||0)].label, TALLY.wallField));
+  DECOR_TILE_LABEL.forEach((lab,i)=>{ if(TALLY.decor[i]>0) L.push(row(lab, TALLY.decor[i])); });
+  const grand=TALLY.floorTotal+TALLY.wallField+TALLY.decor.reduce((a,b)=>a+b,0);
   L.push('─'.repeat(35));
   L.push(row('TOTAL tiles', grand));
   document.getElementById('stats').textContent = L.join('\n');
@@ -809,7 +821,7 @@ function buildSchema(tab){
       {k:w+'bandRows',  l:'Effect rows', type:'select', options:['Off','1 row','2 rows']},
       {k:w+'bandTile',  l:'Effect tile', type:'select', options:DECOR_NAMES},
       {k:w+'bandHeight',l:'Effect H (m)',mn:0.0, mx:3.2, s:0.05},
-      {k:w+'accent',    l:'Accent wall', type:'select', options:['Off','Patchwork','Olas wave','Plain']}
+      {k:w+'accent',    l:'Accent wall', type:'select', options:['Off','Patchwork','Olas wave','Plain','Pune Cuadros']}
     ]});
   });
   schema.push({section:'Display', open:true, controls:[
