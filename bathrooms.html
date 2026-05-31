@@ -55,6 +55,12 @@ canvas{display:block}
   padding:3px 6px;outline:none;cursor:pointer}
 .gs-sel:focus{border-color:#4a9eff}
 .gs-sel option{background:#1e1e1e;color:#4a9eff}
+.radioset{display:flex;flex:1;min-width:0;gap:4px}
+.rbtn{flex:1;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:4px;
+  color:#999;font-size:11px;padding:4px 0;cursor:pointer;font-family:inherit;
+  transition:background .15s,color .15s,border-color .15s}
+.rbtn:hover{background:rgba(255,255,255,0.08);color:#ccc}
+.rbtn.active{background:rgba(74,158,255,0.18);border-color:rgba(74,158,255,0.6);color:#4a9eff}
 #info{position:fixed;bottom:8px;left:10px;font-size:11px;color:rgba(255,255,255,0.4);z-index:100}
 #stats{position:fixed;top:8px;left:10px;font-size:11px;color:rgba(255,255,255,0.72);z-index:100;
   background:rgba(0,0,0,0.55);padding:8px 11px;border-radius:5px;white-space:pre;line-height:1.5;
@@ -116,6 +122,7 @@ const CONFIG = {
   view: '3d',          // '3d' | 'unfold'
   active: 'A',
   texture: 1,          // 1 = Kalina Gris photos, 0 = flat colours
+  showSchedule: 1,     // tile take-off list in the HUD
   A: bathCfg({
     room: { width:1.50, depth:2.00, height:2.45, notchCorner:2, notchWidth:0.0, notchDepth:0.0 },
     door: { wall:0, position:0.62, width:0.80, height:2.05 }
@@ -713,6 +720,7 @@ function updateStats(B){
   L.push(name);
   L.push(`${R.width.toFixed(2)} × ${R.depth.toFixed(2)} m  ·  H ${R.height.toFixed(2)} m`);
   L.push(`Floor area ≈ ${area.toFixed(2)} m²  ·  ${CONFIG.view==='3d'?'3D room':'Unfold 2D'}  ·  ${CONFIG.texture?'photo':'flat'}`);
+  if(!CONFIG.showSchedule){ document.getElementById('stats').textContent = L.join('\n'); return; }
   L.push('');
   L.push('TILE SCHEDULE  (incl. cut tiles)');
   const row=(label,n,indent)=>{
@@ -784,7 +792,7 @@ function buildSchema(tab){
     {section:'Floor tiles', open:true, controls:[
       {k:p+'floor.prod',    l:'Tile type',   type:'select', options:FLOOR_TILES.map(t=>t.label)},
       {k:p+'floor.grout',   l:'Grout (m)',   mn:0.0,  mx:0.02,s:0.001},
-      {k:p+'floor.angle',   l:'Angle (°)',   mn:0,    mx:90,  s:1},
+      {k:p+'floor.angle',   l:'Angle',       type:'radio', options:['0°','45°','90°'], values:[0,45,90]},
       {k:p+'floor.offsetX', l:'Start X (m)', mn:-0.6, mx:0.6, s:0.01},
       {k:p+'floor.offsetY', l:'Start Z (m)', mn:-0.6, mx:0.6, s:0.01}
     ]}
@@ -794,7 +802,7 @@ function buildSchema(tab){
     schema.push({section:'Wall '+c+' '+({N:'(back)',E:'(right)',S:'(front)',W:'(left)'}[c]), open:false, controls:[
       {k:w+'prod',   l:'Tile type',   type:'select', options:WALL_TILES.map(t=>t.label)},
       {k:w+'orient', l:'Orientation', type:'select', options:['Horizontal','Vertical (90°)']},
-      {k:w+'bond',   l:'Layout',      type:'select', options:['Stacked grid','Brick offset']},
+      {k:w+'bond',   l:'Layout',      type:'radio', options:['Stacked','Brick'], values:[0,1]},
       {k:w+'grout',  l:'Grout (m)',   mn:0.0,  mx:0.02,s:0.001},
       {k:w+'offsetX',l:'Start X (m)', mn:-0.6, mx:0.6, s:0.01},
       {k:w+'offsetY',l:'Start Y (m)', mn:-0.6, mx:0.6, s:0.01},
@@ -804,7 +812,8 @@ function buildSchema(tab){
       {k:w+'accent',    l:'Accent wall', type:'select', options:['Off','Patchwork','Olas wave','Plain']}
     ]});
   });
-  schema.push({section:'Display', open:false, controls:[
+  schema.push({section:'Display', open:true, controls:[
+    {k:'showSchedule', l:'Show tile schedule', type:'checkbox'},
     {k:'texture', l:'Texture', type:'select', options:['Flat colour','Kalina Gris photos']}
   ]});
   return schema;
@@ -823,6 +832,17 @@ function createGUI(){
         const val=cfgGet(ctrl.k); const id=ctrl.k.replace(/\./g,'_');
         const opts=ctrl.options.map((o,i)=>`<option value="${i}"${i===Math.round(val)?' selected':''}>${o}</option>`).join('');
         html+=`<div class="gr"><label>${ctrl.l}</label><select class="gs-sel" id="s_${id}" onchange="onSelect('${ctrl.k}',this.value)">${opts}</select></div>`;
+      } else if(ctrl.type==='radio'){
+        const val=cfgGet(ctrl.k);
+        const btns=ctrl.options.map((o,i)=>{
+          const v=ctrl.values[i];
+          const active=(Number(val)===v)?' active':'';
+          return `<button class="rbtn${active}" onclick="onRadio('${ctrl.k}',${v},this)">${o}</button>`;
+        }).join('');
+        html+=`<div class="gr"><label>${ctrl.l}</label><div class="radioset">${btns}</div></div>`;
+      } else if(ctrl.type==='checkbox'){
+        const checked=cfgGet(ctrl.k)?'checked':'';
+        html+=`<div class="gc"><input type="checkbox" id="c_${ctrl.k}" ${checked} onchange="onCheck('${ctrl.k}',this.checked)"><label for="c_${ctrl.k}">${ctrl.l}</label></div>`;
       } else {
         const val=cfgGet(ctrl.k);
         const dec=ctrl.s<0.01?3:ctrl.s<0.1?2:ctrl.s>=1?0:1;
@@ -851,6 +871,17 @@ window.onValue=function(key,id,val,dec){
   scheduleRebuild();
 };
 window.onSelect=function(key,val){ cfgSet(key,parseInt(val,10)); scheduleRebuild(); };
+window.onRadio=function(key,val,btn){
+  cfgSet(key,val);
+  Array.from(btn.parentElement.children).forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  scheduleRebuild();
+};
+window.onCheck=function(key,checked){
+  cfgSet(key, checked?1:0);
+  if(key==='showSchedule') updateStats(CONFIG[CONFIG.active]);   // HUD-only, no rebuild
+  else scheduleRebuild();
+};
 window.toggleGUI=function(){
   document.getElementById('gui').classList.toggle('collapsed');
   document.getElementById('toggle').classList.toggle('collapsed');

@@ -230,7 +230,7 @@ The Momastela photos are square shots of a 2:1 tile, so after cropping (below) t
 ## Architecture
 
 - **CONFIG** holds `view`, `active`, `texture`, and `A`/`B` bath objects built by `bathCfg()`. Each wall is built by `wallCfg()` (tileW/H, orient, bond, grout, offsets, band rows/height/tile, accent).
-- **GUI_SCHEMA is built programmatically** by `buildSchema(tab)` so the four walls stay DRY — there is no static schema array.
+- **GUI_SCHEMA is built programmatically** by `buildSchema(tab)` so the four walls stay DRY — there is no static schema array. Control types in `createGUI`: slider (default), `select` (dropdown), `radio` (segmented buttons — `options[]` + matching `values[]`, e.g. floor angle 0/45/90, wall bond Stacked/Brick), and `checkbox` (e.g. `showSchedule`, which hides the HUD take-off list without a rebuild). Handlers: `onSlider/onValue/onSelect/onRadio/onCheck`.
 - **Geometry is built from a single primitive:** `poly(group, mat, pts, uvs)` — a fan-triangulated convex polygon with explicit UVs. Used for every tile, the grout backing, and the screed. Cut tiles keep the pattern continuous because UVs are computed from each clipped vertex's position within the tile.
 - **Room shape:** `roomPolygon(R)` returns a CCW point list (4 corners, or 6 for the notch). `floorRects(R)` returns 1–2 axis-aligned rectangles covering the floor (the notch splits the L into two rects).
 - **Floor tiling** (`buildFloorTiles`): a rotated/offset grid clipped to each floor rect via Sutherland–Hodgman (`clipToRect`). Handles angle + L-shape.
