@@ -131,7 +131,7 @@ const CONFIG = {
     // From the hand sketch: ~120 wide × 200 deep, a 20×120 notch in the
     // back-left corner; the remaining (front) part of the left wall is 0.80 m,
     // which is where the door sits.
-    room: { width:1.20, depth:2.00, height:2.55,
+    room: { width:1.20, depth:2.00, height:2.45,
             notchCorner:3, notchWidth:0.20, notchDepth:1.20 },
     door: { wall:3, position:0.50, width:0.70, height:2.05 }
   })
@@ -144,8 +144,14 @@ CONFIG.A.walls.S.accent = 1;                                     // front wall =
 
 // ── Bathroom B (notch) — Alaplana Pune + Keros Pisa range ──
 CONFIG.B.floor.prod = 2;                                         // Keros Pisa Gris 33×33
-['N','E','S','W'].forEach(c=>{ CONFIG.B.walls[c].prod = 1; });   // Alaplana Pune Blanco field
-CONFIG.B.walls.N.accent = 4;                                     // back wall = Pune Cuadros accent
+['N','E','S','W'].forEach(c=>{
+  const w = CONFIG.B.walls[c];
+  w.prod = 1;        // Alaplana Pune Blanco field
+  w.accent = 0;      // no accent wall
+  w.bond = 0;        // stacked
+  w.bandRows = 2;    // 2 effect rows…
+  w.bandTile = 3;    // …of Pune Cuadros
+});
 
 // ═══════════════════════════════════════════════════════════════
 // CONFIG ACCESS HELPERS (dot-notation, e.g. 'A.walls.N.grout')
