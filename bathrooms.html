@@ -105,7 +105,7 @@ function bathCfg(o){
     room:   { width:2.0, depth:2.4, height:2.60,
               notchCorner:2, notchWidth:0.0, notchDepth:0.0 },
     door:   { wall:0, position:0.5, width:0.80, height:2.05 },
-    floor:  { tileW:0.33, tileH:0.33, grout:0.003, angle:0, offsetX:0, offsetY:0 },
+    floor:  { tile:1, tileW:0.31, tileH:0.62, grout:0.003, angle:0, offsetX:0, offsetY:0 },
     walls:  { N:wallCfg(), E:wallCfg(), S:wallCfg(), W:wallCfg() }
   };
   return Object.assign(c, o||{});
@@ -115,7 +115,10 @@ const CONFIG = {
   view: '3d',          // '3d' | 'unfold'
   active: 'A',
   texture: 1,          // 1 = Kalina Gris photos, 0 = flat colours
-  A: bathCfg(),
+  A: bathCfg({
+    room: { width:1.50, depth:2.00, height:2.45, notchCorner:2, notchWidth:0.0, notchDepth:0.0 },
+    door: { wall:0, position:0.62, width:0.80, height:2.05 }
+  }),
   B: bathCfg({
     room: { width:2.2, depth:2.6, height:2.60,
             notchCorner:2, notchWidth:0.70, notchDepth:0.55 },
@@ -197,6 +200,7 @@ const groups = {};
 const groupNames = ['floor','walls','trim','base'];
 let MAT = {};   // active material set chosen by CONFIG.texture
 let photoMat = {}, colorMat = {};
+let momastelaPhoto = [], momastelaColor = [];   // floor: multi-face mixed pack
 let groutMat, plainAccentMat, doorMat, frameMat, screedMat;
 
 function loadTile(url, fallbackTex){
@@ -255,6 +259,15 @@ function initScene(){
     olas:  mk(waveCanvas())
   };
 
+  // Momastela Ghirigori N 31×62 — a "mixed pack": 3 different decorated faces
+  // that get alternated across the floor (see floorMatFor).
+  momastelaPhoto = [
+    loadTile('tiles/momastela_ghirigori_0.jpg', decorCanvas()),
+    loadTile('tiles/momastela_ghirigori_1.jpg', decorCanvas()),
+    loadTile('tiles/momastela_ghirigori_2.jpg', decorCanvas())
+  ];
+  momastelaColor = [ mk(decorCanvas()), mk(decorCanvas()), mk(decorCanvas()) ];
+
   groutMat       = new THREE.MeshStandardMaterial({color:0x3c3f43, roughness:0.95, side:THREE.DoubleSide});
   plainAccentMat = new THREE.MeshStandardMaterial({color:0x6b7075, roughness:0.6,  side:THREE.DoubleSide});
   doorMat        = new THREE.MeshStandardMaterial({color:0xe6e1d8, roughness:0.7,  side:THREE.DoubleSide});
@@ -273,6 +286,19 @@ function initScene(){
 function decorMat(idx){
   if(idx===2) return plainAccentMat;
   return idx===1 ? MAT.olas : MAT.patch;
+}
+
+// Floor tile material for grid cell (i,j).
+//   floorTile 0 = single Kalina Gris field tile.
+//   floorTile 1 = Momastela Ghirigori mixed pack — pick one of the N faces by a
+//   stable hash of (i,j), so the assortment looks scattered but never reshuffles
+//   on rebuild and (usually) avoids identical neighbours.
+function floorMatFor(floorTile, i, j){
+  if(floorTile!==1) return MAT.floor;
+  const set = CONFIG.texture ? momastelaPhoto : momastelaColor;
+  if(!set.length) return MAT.floor;
+  const h = (Math.imul((i|0)+1000, 73856093) ^ Math.imul((j|0)+1000, 19349663)) >>> 0;
+  return set[h % set.length];
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -446,6 +472,7 @@ function buildFloorTiles(B){
   const e1=[cs,sn], e2=[-sn,cs];          // orthonormal grid basis in (x,z)
   const px=tw+g, py=th+g;
   const Y=0.004;
+  const floorTile=Math.round(F.tile||0);
   const rects=floorRects(R);
 
   // screed (dark base showing through grout) — one quad per region rect
@@ -475,7 +502,7 @@ function buildFloorTiles(B){
         const pts=cl.map(p=>[p[0],Y,p[1]]);
         const uvs=cl.map(p=>{ const gu=p[0]*e1[0]+p[1]*e1[1], gv=p[0]*e2[0]+p[1]*e2[1];
           return [(gu-gu0)/tw, 1-(gv-gv0)/th]; });
-        poly(groups.floor, MAT.floor, pts, uvs);
+        poly(groups.floor, floorMatFor(floorTile, i, j), pts, uvs);
       }
     }
   });
@@ -688,6 +715,7 @@ function buildSchema(tab){
       {k:p+'door.height',   l:'Height (m)',  mn:1.8,  mx:2.4,  s:0.05}
     ]},
     {section:'Floor tiles', open:true, controls:[
+      {k:p+'floor.tile',    l:'Tile',        type:'select', options:['Kalina Gris 33×33','Momastela Ghirigori 31×62 (mixed)']},
       {k:p+'floor.tileW',   l:'Tile W (m)',  mn:0.05, mx:1.2, s:0.005},
       {k:p+'floor.tileH',   l:'Tile H (m)',  mn:0.05, mx:1.2, s:0.005},
       {k:p+'floor.grout',   l:'Grout (m)',   mn:0.0,  mx:0.02,s:0.001},

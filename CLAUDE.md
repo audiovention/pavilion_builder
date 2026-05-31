@@ -205,12 +205,15 @@ Real product, sourced from praktiker.bg. Photos live in `tiles/` and are loaded 
 
 | File | Product | Real size |
 |------|---------|-----------|
-| `tiles/kalina_gris_floor.jpg`      | Granitogres floor          | 33×33 cm |
+| `tiles/kalina_gris_floor.jpg`      | Granitogres floor (alt)    | 33×33 cm |
 | `tiles/kalina_gris_wall.jpg`       | Faience wall field         | 25×50 cm |
 | `tiles/kalina_gris_decor.jpg`      | Patchwork décor            | 25×50 cm |
 | `tiles/kalina_olas_gris_decor.jpg` | "Olas" wave relief décor   | 25×50 cm |
+| `tiles/momastela_ghirigori_0..2.jpg` | Momastela Ghirigori N — **default floor** | 31×62 cm |
 
-Default tile sizes in CONFIG match these (floor 0.33×0.33, wall 0.50×0.25). **Note:** images downloaded from praktiker's media API need the `?context=…` token from the product page HTML, and re-encode with `sips` if a browser reports the JPG as not-found (one raw download was subtly malformed).
+**Mixed / multi-face floor pack:** Momastela Ghirigori N is sold as a pack of several *different* decorated faces. The three face textures are loaded into `momastelaPhoto[]` and `floorMatFor(floorTile,i,j)` assigns one per floor cell by a stable hash of `(i,j)` — scattered like a real patchwork floor, never reshuffling on rebuild. `CONFIG.<bath>.floor.tile` selects the floor product (0 = Kalina Gris 33×33 single, 1 = Momastela Ghirigori 31×62 mixed, the default). To add more faces, just push more `loadTile(...)` into `momastelaPhoto`/`momastelaColor`. The praktiker image URL scheme for this product differs from Kalina's: `medias/<id>.jpg-Product-zoom?context=…` with numbered variants `<id>-1/-2/-3`; one of the four images was a lifestyle room photo, not a tile — excluded.
+
+Wall tile sizes in CONFIG default to the Kalina range (wall 0.50×0.25); the floor defaults to Momastela 0.31×0.62. **Note:** images downloaded from praktiker's media API need the `?context=…` token from the product page HTML, and re-encode with `sips` if a browser reports the JPG as not-found (one raw download was subtly malformed).
 
 ## Architecture
 
