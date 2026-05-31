@@ -213,7 +213,15 @@ Real product, sourced from praktiker.bg. Photos live in `tiles/` and are loaded 
 
 **Mixed / multi-face floor pack:** Momastela Ghirigori N is sold as a pack of several *different* decorated faces. The three face textures are loaded into `momastelaPhoto[]` and `floorMatFor(floorTile,i,j)` assigns one per floor cell by a stable hash of `(i,j)` — scattered like a real patchwork floor, never reshuffling on rebuild. `CONFIG.<bath>.floor.tile` selects the floor product (0 = Kalina Gris 33×33 single, 1 = Momastela Ghirigori 31×62 mixed, the default). To add more faces, just push more `loadTile(...)` into `momastelaPhoto`/`momastelaColor`. The praktiker image URL scheme for this product differs from Kalina's: `medias/<id>.jpg-Product-zoom?context=…` with numbered variants `<id>-1/-2/-3`; one of the four images was a lifestyle room photo, not a tile — excluded.
 
-Wall tile sizes in CONFIG default to the Kalina range (wall 0.50×0.25); the floor defaults to Momastela 0.31×0.62. **Note:** images downloaded from praktiker's media API need the `?context=…` token from the product page HTML, and re-encode with `sips` if a browser reports the JPG as not-found (one raw download was subtly malformed).
+Wall tile sizes in CONFIG default to the Kalina range (wall 0.50×0.25); the floor defaults to Momastela **0.62×0.31** (landscape) — the product photos are square shots of a 2:1 tile, so after cropping (below) they are 2:1 and the floor tile must be landscape to map without distortion.
+
+## Cropping + baking — `bake_tiles.py`
+
+`python3 bake_tiles.py` (needs Pillow) does two things:
+1. **Auto-crops the white photo border** off every `tiles/*.jpg` referenced by the HTML (writes to `tiles/cropped/`, or `--inplace` to overwrite with originals backed up to `tiles/_originals/`). Cropping detects the content bbox via a thresholded + eroded mask, with a `--max-trim` safety clamp. This both removes the fake-grout frame on the wall tile and reveals that the décor/floor shots are 2:1 (white letterbox top/bottom removed).
+2. **Bakes a self-contained `bathrooms_baked.html`** — every `tiles/<file>.jpg` string in the HTML is replaced by a base64 JPEG `data:` URI of the cropped image, so the result needs no `tiles/` folder and opens straight off `file://`. ~1.2 MB.
+
+`bathrooms.html` stays the editable source (loads from `tiles/`); `bathrooms_baked.html` is the generated, portable artifact (git-ignored — regenerate with the script). Re-run after changing any tile or the HTML. **Note:** images downloaded from praktiker's media API need the `?context=…` token from the product page HTML, and re-encode with `sips` if a browser reports the JPG as not-found (one raw download was subtly malformed).
 
 ## Architecture
 
