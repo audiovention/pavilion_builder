@@ -128,9 +128,11 @@ const CONFIG = {
     door: { wall:0, position:0.62, width:0.80, height:2.05 }
   }),
   B: bathCfg({
-    room: { width:2.2, depth:2.6, height:2.60,
-            notchCorner:2, notchWidth:0.70, notchDepth:0.55 },
-    door: { wall:0, position:0.4, width:0.80, height:2.05 }
+    // From the hand sketch: ~120 wide × 200 deep, a ~44×78 notch in the
+    // back-left corner (left wall 122 = depth 200 − notch 78). Door in the notch.
+    room: { width:1.20, depth:2.00, height:2.55,
+            notchCorner:3, notchWidth:0.44, notchDepth:0.78 },
+    door: { wall:3, position:0.30, width:0.70, height:2.05 }
   })
 };
 
@@ -442,11 +444,15 @@ function roomPolygon(R){
   if(nw<=0 || nd<=0) return base;
   const k=((R.notchCorner|0)%4+4)%4;
   const c=base[k]; const sx=Math.sign(c.x)||1, sz=Math.sign(c.z)||1;
-  const a ={x:c.x,         z:c.z - sz*nd};
-  const b ={x:c.x - sx*nw, z:c.z - sz*nd};
-  const c2={x:c.x - sx*nw, z:c.z};
+  const a ={x:c.x,         z:c.z - sz*nd};   // moved in z (on the vertical edge at corner)
+  const b ={x:c.x - sx*nw, z:c.z - sz*nd};   // inner notch corner
+  const c2={x:c.x - sx*nw, z:c.z};           // moved in x (on the horizontal edge at corner)
+  // Insert in CCW order: the point on the INCOMING edge first. The incoming
+  // edge is vertical for even corners (start with `a`) and horizontal for odd
+  // corners (start with `c2`); otherwise the corner gets a diagonal wall.
+  const ins = (k % 2 === 0) ? [a,b,c2] : [c2,b,a];
   const out=[];
-  base.forEach((p,i)=>{ if(i===k){ out.push(a,b,c2); } else out.push(p); });
+  base.forEach((p,i)=>{ if(i===k){ out.push(...ins); } else out.push(p); });
   return out;
 }
 
