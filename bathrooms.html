@@ -56,8 +56,9 @@ canvas{display:block}
 .gs-sel:focus{border-color:#4a9eff}
 .gs-sel option{background:#1e1e1e;color:#4a9eff}
 #info{position:fixed;bottom:8px;left:10px;font-size:11px;color:rgba(255,255,255,0.4);z-index:100}
-#stats{position:fixed;top:8px;left:10px;font-size:11px;color:rgba(255,255,255,0.6);z-index:100;
-  background:rgba(0,0,0,0.5);padding:6px 10px;border-radius:4px;white-space:pre;line-height:1.5}
+#stats{position:fixed;top:8px;left:10px;font-size:11px;color:rgba(255,255,255,0.72);z-index:100;
+  background:rgba(0,0,0,0.55);padding:8px 11px;border-radius:5px;white-space:pre;line-height:1.5;
+  font-family:Consolas,'SF Mono',Menlo,monospace}
 .subhdr{font-size:10px;color:#5a8;letter-spacing:.5px;text-transform:uppercase;margin:8px 0 4px;font-weight:700}
 </style>
 </head>
@@ -93,7 +94,7 @@ canvas{display:block}
 // accent: 0=off (field tile), else (accent-1) selects décor for a FULL accent wall.
 function wallCfg(o){
   return Object.assign({
-    tileW:0.50, tileH:0.25, grout:0.002,
+    prod:0, grout:0.002,
     orient:0, bond:1, offsetX:0, offsetY:0,
     bandRows:0, bandHeight:1.10, bandTile:0,
     accent:0
@@ -105,7 +106,7 @@ function bathCfg(o){
     room:   { width:2.0, depth:2.4, height:2.60,
               notchCorner:2, notchWidth:0.0, notchDepth:0.0 },
     door:   { wall:0, position:0.5, width:0.80, height:2.05 },
-    floor:  { tile:1, tileW:0.62, tileH:0.31, grout:0.003, angle:0, offsetX:0, offsetY:0 },
+    floor:  { prod:0, grout:0.003, angle:0, offsetX:0, offsetY:0 },
     walls:  { N:wallCfg(), E:wallCfg(), S:wallCfg(), W:wallCfg() }
   };
   return Object.assign(c, o||{});
@@ -132,7 +133,7 @@ CONFIG.B.walls.N.accent  = 2;   // 2 => Olas wave full accent wall
 CONFIG.B.walls.E.bandRows = 1;  CONFIG.B.walls.E.bandHeight = 1.20; CONFIG.B.walls.E.bandTile = 0;
 
 // ═══════════════════════════════════════════════════════════════
-// CONFIG ACCESS HELPERS (dot-notation, e.g. 'A.walls.N.tileW')
+// CONFIG ACCESS HELPERS (dot-notation, e.g. 'A.walls.N.grout')
 // ═══════════════════════════════════════════════════════════════
 function cfgGet(path){ return path.split('.').reduce((o,k)=>o[k], CONFIG); }
 function cfgSet(path,val){
@@ -143,6 +144,20 @@ function cfgSet(path,val){
 const DECOR_NAMES = ['Patchwork décor','Olas wave décor','Plain accent'];
 const CARDINALS = ['N','E','S','W'];
 const DOOR_WALL_NAMES = ['Back (N)','Right (E)','Front (S)','Left (W)'];
+
+// ── Tile catalog ──────────────────────────────────────────────────────────
+// Picking a product from a dropdown fixes BOTH its texture and its dimensions.
+// Floor: w×h in metres (+ which texture set). Wall: a=long, b=short side; the
+// laid W/H come from a/b swapped by the per-wall orientation toggle.
+const FLOOR_TILES = [
+  { label:'Momastela Ghirigori 31×62 (mixed)', w:0.62, h:0.31, kind:'momastela' },
+  { label:'Kalina Gris 33×33',                 w:0.33, h:0.33, kind:'kalina' }
+];
+const WALL_TILES = [
+  { label:'Kalina Gris 25×50', a:0.50, b:0.25 }
+];
+// Purchasing labels for the décor / accent products (all 25×50).
+const DECOR_TILE_LABEL = ['Kalina patchwork décor 25×50','Kalina Olas décor 25×50','Plain accent 25×50'];
 
 // ═══════════════════════════════════════════════════════════════
 // PROCEDURAL FALLBACK TEXTURES (used in "flat colours" mode and if the
@@ -288,18 +303,29 @@ function decorMat(idx){
   return idx===1 ? MAT.olas : MAT.patch;
 }
 
+// Stable per-cell face index for a mixed pack (scattered, never reshuffles).
+function floorFaceIndex(i, j, n){
+  const h = (Math.imul((i|0)+1000, 73856093) ^ Math.imul((j|0)+1000, 19349663)) >>> 0;
+  return h % n;
+}
 // Floor tile material for grid cell (i,j).
-//   floorTile 0 = single Kalina Gris field tile.
-//   floorTile 1 = Momastela Ghirigori mixed pack — pick one of the N faces by a
-//   stable hash of (i,j), so the assortment looks scattered but never reshuffles
-//   on rebuild and (usually) avoids identical neighbours.
-function floorMatFor(floorTile, i, j){
-  if(floorTile!==1) return MAT.floor;
+//   kind 'kalina'    -> single Kalina Gris field tile.
+//   kind 'momastela' -> Momastela Ghirigori mixed pack — one of the N faces.
+function floorMatFor(kind, i, j){
+  if(kind!=='momastela') return MAT.floor;
   const set = CONFIG.texture ? momastelaPhoto : momastelaColor;
   if(!set.length) return MAT.floor;
-  const h = (Math.imul((i|0)+1000, 73856093) ^ Math.imul((j|0)+1000, 19349663)) >>> 0;
-  return set[h % set.length];
+  return set[floorFaceIndex(i, j, set.length)];
 }
+
+// ── Tile take-off / schedule ──────────────────────────────────────────────
+// Counts LOGICAL tiles (one per grid cell that lands in the room), so a cut
+// tile or a tile split by the door still counts once.
+function emptyTally(){
+  return { floorLabel:'', floorTotal:0, faces:null,
+           wallField:0, decorPatch:0, decorOlas:0, plain:0 };
+}
+let TALLY = emptyTally();
 
 // ═══════════════════════════════════════════════════════════════
 // ORBIT CONTROLS
@@ -467,13 +493,18 @@ function rectSubtract(a,b){
 // ═══════════════════════════════════════════════════════════════
 function buildFloorTiles(B){
   const F=B.floor, R=B.room;
-  const tw=Math.max(0.02,F.tileW), th=Math.max(0.02,F.tileH), g=Math.max(0,F.grout);
+  const prod=FLOOR_TILES[Math.round(F.prod||0)] || FLOOR_TILES[0];
+  const tw=prod.w, th=prod.h, g=Math.max(0,F.grout);
   const ang=F.angle*Math.PI/180, cs=Math.cos(ang), sn=Math.sin(ang);
   const e1=[cs,sn], e2=[-sn,cs];          // orthonormal grid basis in (x,z)
   const px=tw+g, py=th+g;
   const Y=0.004;
-  const floorTile=Math.round(F.tile||0);
   const rects=floorRects(R);
+  // take-off bookkeeping
+  TALLY.floorLabel = prod.label;
+  const faceN = (CONFIG.texture ? momastelaPhoto : momastelaColor).length || 1;
+  TALLY.faces = (prod.kind==='momastela') ? new Array(faceN).fill(0) : null;
+  const counted = new Set();   // grid cells already tallied (a cell may straddle 2 region rects)
 
   // screed (dark base showing through grout) — one quad per region rect
   rects.forEach(r=>{
@@ -502,7 +533,13 @@ function buildFloorTiles(B){
         const pts=cl.map(p=>[p[0],Y,p[1]]);
         const uvs=cl.map(p=>{ const gu=p[0]*e1[0]+p[1]*e1[1], gv=p[0]*e2[0]+p[1]*e2[1];
           return [(gu-gu0)/tw, 1-(gv-gv0)/th]; });
-        poly(groups.floor, floorMatFor(floorTile, i, j), pts, uvs);
+        poly(groups.floor, floorMatFor(prod.kind, i, j), pts, uvs);
+        const key=i+','+j;
+        if(!counted.has(key)){
+          counted.add(key);
+          TALLY.floorTotal++;
+          if(TALLY.faces) TALLY.faces[floorFaceIndex(i, j, TALLY.faces.length)]++;
+        }
       }
     }
   });
@@ -528,8 +565,9 @@ function buildWall(grp, edge, H, wc, doorRect, mode){
     return [bx + inward.x*0.006, v, bz + inward.z*0.006];
   };
 
-  let tw=Math.max(0.04,wc.tileW), th=Math.max(0.04,wc.tileH);
-  if(wc.orient===1){ const t=tw; tw=th; th=t; }
+  const wp = WALL_TILES[Math.round(wc.prod||0)] || WALL_TILES[0];
+  let tw=wp.a, th=wp.b;                         // a = long side, b = short side
+  if(wc.orient===1){ const t=tw; tw=th; th=t; } // vertical orientation
   const g=Math.max(0,wc.grout), px=tw+g, py=th+g;
 
   // ---- wall backing (grout colour) = wall rect minus door ----
@@ -559,22 +597,31 @@ function buildWall(grp, edge, H, wc, doorRect, mode){
   for(let j=-1;j<=jMax;j++){
     const v0=wc.offsetY+j*py, v1=v0+th, vc=(v0+v1)/2;
     const rowShift=(wc.bond===1 && (((j%2)+2)%2)===1) ? px/2 : 0;
-    let mat=MAT.wall;
-    if(isAccent) mat=accMat;
-    else if(bandRows>0 && Math.abs(vc-wc.bandHeight)<=bandHalf) mat=decorMat(wc.bandTile);
+    // material + which take-off bucket this row's tiles belong to
+    let mat=MAT.wall, didx=-1;   // didx -1 = field; 0/1/2 = décor product
+    if(isAccent){ mat=accMat; didx=wc.accent-1; }
+    else if(bandRows>0 && Math.abs(vc-wc.bandHeight)<=bandHalf){ mat=decorMat(wc.bandTile); didx=wc.bandTile; }
     for(let i=-1;i<=iMax;i++){
       const u0=wc.offsetX-rowShift+i*px, u1=u0+tw;
       // clip tile to wall bounds
       let rect={x0:Math.max(0,u0), x1:Math.min(L,u1), y0:Math.max(0,v0), y1:Math.min(H,v1)};
       if(rect.x0>=rect.x1||rect.y0>=rect.y1) continue;
       const parts = doorRect ? rectSubtract(rect, {x0:doorRect.x0,x1:doorRect.x1,y0:doorRect.y0,y1:doorRect.y1}) : [rect];
+      let placed=false;
       parts.forEach(pr=>{
         if(pr.x0>=pr.x1||pr.y0>=pr.y1) return;
         const pts=[[pr.x0,pr.y0],[pr.x1,pr.y0],[pr.x1,pr.y1],[pr.x0,pr.y1]].map(q=>toWorld(q[0],q[1]));
         const uvs=[[pr.x0,pr.y0],[pr.x1,pr.y0],[pr.x1,pr.y1],[pr.x0,pr.y1]].map(q=>
           [ (q[0]-u0)/tw, (q[1]-v0)/th ]);
         poly(grp, mat, pts, uvs);
+        placed=true;
       });
+      if(placed){   // one physical tile per grid cell, regardless of door cuts
+        if(didx===0) TALLY.decorPatch++;
+        else if(didx===1) TALLY.decorOlas++;
+        else if(didx===2) TALLY.plain++;
+        else TALLY.wallField++;
+      }
     }
   }
 
@@ -597,6 +644,7 @@ function buildWall(grp, edge, H, wc, doorRect, mode){
 function buildRoom(){
   ['floor','walls','trim','base'].forEach(clearGroup);
   tileCount=0;
+  TALLY=emptyTally();
   const B=CONFIG[CONFIG.active];
   const R=B.room, mode=CONFIG.view;
   MAT = CONFIG.texture ? photoMat : colorMat;
@@ -661,10 +709,29 @@ function updateStats(B){
   let area=R.width*R.depth;
   if(R.notchWidth>0&&R.notchDepth>0) area-=R.notchWidth*R.notchDepth;
   const name = CONFIG.active==='A'?'Bathroom A (rectangular)':'Bathroom B (notched)';
-  document.getElementById('stats').textContent =
-    `${name}\n${R.width.toFixed(2)} × ${R.depth.toFixed(2)} m  ·  H ${R.height.toFixed(2)} m`+
-    `\nFloor area ≈ ${area.toFixed(2)} m²   ·   ${tileCount} tiles`+
-    `\nView: ${CONFIG.view==='3d'?'3D room':'Unfolded 2D'}   ·   ${CONFIG.texture?'Kalina Gris':'flat colour'}`;
+  const L=[];
+  L.push(name);
+  L.push(`${R.width.toFixed(2)} × ${R.depth.toFixed(2)} m  ·  H ${R.height.toFixed(2)} m`);
+  L.push(`Floor area ≈ ${area.toFixed(2)} m²  ·  ${CONFIG.view==='3d'?'3D room':'Unfold 2D'}  ·  ${CONFIG.texture?'photo':'flat'}`);
+  L.push('');
+  L.push('TILE SCHEDULE  (incl. cut tiles)');
+  const row=(label,n,indent)=>{
+    const pre=(indent||'');
+    const lab=pre+label;
+    return (lab.length>30?lab.slice(0,30):lab).padEnd(31,'·') + String(n).padStart(4);
+  };
+  if(TALLY.floorTotal>0){
+    L.push(row(TALLY.floorLabel, TALLY.floorTotal));
+    if(TALLY.faces) TALLY.faces.forEach((c,i)=> L.push(row('face '+(i+1), c, '  ')));
+  }
+  if(TALLY.wallField>0)  L.push(row(WALL_TILES[0].label, TALLY.wallField));
+  if(TALLY.decorPatch>0) L.push(row(DECOR_TILE_LABEL[0], TALLY.decorPatch));
+  if(TALLY.decorOlas>0)  L.push(row(DECOR_TILE_LABEL[1], TALLY.decorOlas));
+  if(TALLY.plain>0)      L.push(row(DECOR_TILE_LABEL[2], TALLY.plain));
+  const grand=TALLY.floorTotal+TALLY.wallField+TALLY.decorPatch+TALLY.decorOlas+TALLY.plain;
+  L.push('─'.repeat(35));
+  L.push(row('TOTAL tiles', grand));
+  document.getElementById('stats').textContent = L.join('\n');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -715,9 +782,7 @@ function buildSchema(tab){
       {k:p+'door.height',   l:'Height (m)',  mn:1.8,  mx:2.4,  s:0.05}
     ]},
     {section:'Floor tiles', open:true, controls:[
-      {k:p+'floor.tile',    l:'Tile',        type:'select', options:['Kalina Gris 33×33','Momastela Ghirigori 31×62 (mixed)']},
-      {k:p+'floor.tileW',   l:'Tile W (m)',  mn:0.05, mx:1.2, s:0.005},
-      {k:p+'floor.tileH',   l:'Tile H (m)',  mn:0.05, mx:1.2, s:0.005},
+      {k:p+'floor.prod',    l:'Tile type',   type:'select', options:FLOOR_TILES.map(t=>t.label)},
       {k:p+'floor.grout',   l:'Grout (m)',   mn:0.0,  mx:0.02,s:0.001},
       {k:p+'floor.angle',   l:'Angle (°)',   mn:0,    mx:90,  s:1},
       {k:p+'floor.offsetX', l:'Start X (m)', mn:-0.6, mx:0.6, s:0.01},
@@ -727,8 +792,7 @@ function buildSchema(tab){
   CARDINALS.forEach(c=>{
     const w=p+'walls.'+c+'.';
     schema.push({section:'Wall '+c+' '+({N:'(back)',E:'(right)',S:'(front)',W:'(left)'}[c]), open:false, controls:[
-      {k:w+'tileW',  l:'Tile W (m)',  mn:0.05, mx:1.2, s:0.005},
-      {k:w+'tileH',  l:'Tile H (m)',  mn:0.05, mx:1.2, s:0.005},
+      {k:w+'prod',   l:'Tile type',   type:'select', options:WALL_TILES.map(t=>t.label)},
       {k:w+'orient', l:'Orientation', type:'select', options:['Horizontal','Vertical (90°)']},
       {k:w+'bond',   l:'Layout',      type:'select', options:['Stacked grid','Brick offset']},
       {k:w+'grout',  l:'Grout (m)',   mn:0.0,  mx:0.02,s:0.001},

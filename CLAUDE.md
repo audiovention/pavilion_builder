@@ -211,9 +211,13 @@ Real product, sourced from praktiker.bg. Photos live in `tiles/` and are loaded 
 | `tiles/kalina_olas_gris_decor.jpg` | "Olas" wave relief décor   | 25×50 cm |
 | `tiles/momastela_ghirigori_0..2.jpg` | Momastela Ghirigori N — **default floor** | 31×62 cm |
 
-**Mixed / multi-face floor pack:** Momastela Ghirigori N is sold as a pack of several *different* decorated faces. The three face textures are loaded into `momastelaPhoto[]` and `floorMatFor(floorTile,i,j)` assigns one per floor cell by a stable hash of `(i,j)` — scattered like a real patchwork floor, never reshuffling on rebuild. `CONFIG.<bath>.floor.tile` selects the floor product (0 = Kalina Gris 33×33 single, 1 = Momastela Ghirigori 31×62 mixed, the default). To add more faces, just push more `loadTile(...)` into `momastelaPhoto`/`momastelaColor`. The praktiker image URL scheme for this product differs from Kalina's: `medias/<id>.jpg-Product-zoom?context=…` with numbered variants `<id>-1/-2/-3`; one of the four images was a lifestyle room photo, not a tile — excluded.
+**Tile catalog — type fixes texture AND dimensions.** Products live in `FLOOR_TILES` and `WALL_TILES`; each entry carries its label, its dimensions, and which texture to use. The GUI exposes a **Tile type** dropdown per surface (`floor.prod`, `walls.<C>.prod`) — there are no free width/height sliders; the laid size is read from the chosen product (walls swap long/short by the per-wall `orient` toggle). Floor products: `0` Momastela Ghirigori 31×62 (mixed, default), `1` Kalina Gris 33×33. Wall products: `0` Kalina Gris 25×50. Add a product = push one catalog entry (+ its texture).
 
-Wall tile sizes in CONFIG default to the Kalina range (wall 0.50×0.25); the floor defaults to Momastela **0.62×0.31** (landscape) — the product photos are square shots of a 2:1 tile, so after cropping (below) they are 2:1 and the floor tile must be landscape to map without distortion.
+**Mixed / multi-face floor pack:** Momastela Ghirigori N (catalog `kind:'momastela'`) is sold as a pack of several *different* decorated faces. The face textures are in `momastelaPhoto[]`; `floorMatFor(kind,i,j)` assigns one per floor cell via a stable hash of `(i,j)` (scattered, never reshuffles). Add faces by pushing more `loadTile(...)`. The praktiker image URL scheme for this product differs from Kalina's: `medias/<id>.jpg-Product-zoom?context=…` with numbered variants `<id>-1/-2/-3`; one of the four images was a lifestyle room photo, not a tile — excluded.
+
+The Momastela photos are square shots of a 2:1 tile, so after cropping (below) they are 2:1 and the floor product size is **0.62×0.31** (landscape) to map without distortion.
+
+**Tile schedule / take-off:** `TALLY` (reset each `buildRoom`, rendered in the top-left HUD by `updateStats`) counts **logical** tiles — one per grid cell that lands in the room, so a cut tile or a tile split by the door still counts once (not per polygon). It reports the floor product (with a per-face breakdown for mixed packs), wall field, each décor/accent product, and a grand total.
 
 ## Cropping + baking — `bake_tiles.py`
 
