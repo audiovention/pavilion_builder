@@ -140,7 +140,9 @@ const CONFIG = {
 // ── Bathroom A (rectangular) — Kalina range ──
 CONFIG.A.floor.angle    = 45;                                    // floor laid at 45°
 CONFIG.A.walls.S.accent = 1;                                     // front wall = full patchwork accent
-['N','E','W'].forEach(c=>{ CONFIG.A.walls[c].bandRows = 2; CONFIG.A.walls[c].bandTile = 1; CONFIG.A.walls[c].bond = 0; }); // 2 rows Olas waves, stacked (S keeps brick)
+CONFIG.A.walls.S.bond   = 0;                                     // accent wall = stacked, not brick
+['N','E','W'].forEach(c=>{ CONFIG.A.walls[c].bandRows = 2; CONFIG.A.walls[c].bandTile = 1; CONFIG.A.walls[c].bond = 0; }); // 2 rows Olas waves, stacked
+['N','E','S','W'].forEach(c=>{ CONFIG.A.walls[c].bandHeight = 1.20; }); // effect band centred at 1.20 m
 
 // ── Bathroom B (notch) — Alaplana Pune + Keros Pisa range ──
 CONFIG.B.floor.prod = 2;                                         // Keros Pisa Gris 33×33
